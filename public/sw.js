@@ -1,9 +1,9 @@
 // Service worker della web app: rende il sito installabile e mostra l'ultima versione
 // salvata quando manca la connessione. I dati (/api) non vengono mai messi in cache.
-const CACHE = 'appunti-v6';
+const CACHE = 'appunti-v7';
 const SHELL = [
   '/', '/styles.css', '/manifest.webmanifest', '/offline.html',
-  '/js/app.js', '/js/util.js', '/js/ai.js', '/js/fx.js', '/js/quizgen.js', '/js/install.js',
+  '/js/app.js', '/js/util.js', '/js/ai.js', '/js/fx.js', '/js/quizgen.js', '/js/install.js', '/js/zoom.js', '/js/mapgen.js', '/js/pages/map.js',
   '/js/pages/auth.js', '/js/pages/home.js', '/js/pages/subject.js', '/js/pages/topic.js', '/js/pages/note.js',
   '/js/pages/quiz.js', '/js/pages/profile.js', '/js/pages/admin.js', '/js/pages/notfound.js',
   '/vendor/marked.js', '/vendor/purify.js', '/icons/icon-192.png', '/icons/icon-64.png', '/icons/icon-dark-64.png', '/icons/icon-dark-192.png', '/icons/favicon.svg', '/icons/apple-touch-icon.png', '/icons/ai-64.png', '/icons/ai-256.png',

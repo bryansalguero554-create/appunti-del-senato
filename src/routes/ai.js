@@ -6,6 +6,7 @@ import { requireAuth, hasRole } from '../auth.js';
 import { noteToBlocks, ContentTooLargeError } from '../extract.js';
 import { getNote } from './content.js';
 import { normalizeQuestions, saveQuiz } from './quizzes.js';
+import { normalizeMap, saveMap, updateMap, getMap, MAX_NODES } from './maps.js';
 import { ensureLocalFile } from '../sync.js';
 import * as gemini from '../gemini.js';
 
@@ -349,6 +350,135 @@ ${instructions ? `Indicazioni aggiuntive dello studente: ${instructions}` : ''}`
       : apiErrorMessage(err, req.user);
     if (!(err instanceof ContentTooLargeError)) console.error('[AI quiz]', err?.message || err);
     res.status(status).json({ error: message });
+  }
+});
+
+// ---------- Mappe concettuali ----------
+
+const MAP_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    nodes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, parent: { type: 'string' }, label: { type: 'string' }, detail: { type: 'string' } },
+        required: ['id', 'parent', 'label', 'detail'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['title', 'nodes'],
+  additionalProperties: false,
+};
+
+const GEMINI_MAP_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    title: { type: 'STRING' },
+    nodes: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: { id: { type: 'STRING' }, parent: { type: 'STRING' }, label: { type: 'STRING' }, detail: { type: 'STRING' } },
+        required: ['id', 'parent', 'label', 'detail'],
+        propertyOrdering: ['id', 'parent', 'label', 'detail'],
+      },
+    },
+  },
+  required: ['title', 'nodes'],
+  propertyOrdering: ['title', 'nodes'],
+};
+
+const MAP_RULES = `Formato della mappa:
+- "nodes" è l'elenco dei concetti. Ogni concetto ha un "id" breve e unico, "parent" (l'id del concetto da cui dipende; stringa vuota solo per il concetto centrale), "label" e "detail".
+- Un solo concetto centrale: l'argomento principale.
+- "label": parole chiave brevi (massimo 6 parole), niente frasi lunghe.
+- "detail": una frase brevissima (massimo 15 parole) con ciò che serve dire all'interrogazione: date, nomi, definizioni, cause/conseguenze. Può essere vuoto.
+- Ordina i rami in modo logico (cronologico o causa → effetto) e usa al massimo 4 livelli sotto il concetto centrale.
+- Massimo ${MAX_NODES} concetti in tutto. Scrivi in italiano.`;
+
+/** Chiede all'AI un JSON che rispetta lo schema (Gemini o Claude). */
+async function askJson(content, { geminiSchema, schema, userId, kind }) {
+  if (useGemini) {
+    checkGeminiSize(content);
+    logRequest(userId, kind);
+    return gemini.generateJson({ messages: [{ role: 'user', content }], schema: geminiSchema });
+  }
+  const response = await client.beta.messages.create({
+    model: config.aiModel,
+    max_tokens: 16000,
+    messages: [{ role: 'user', content }],
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema } },
+    ...FALLBACK,
+  });
+  logRequest(userId, kind);
+  if (response.stop_reason === 'refusal') throw new gemini.GeminiError('rifiuto', 422);
+  if (response.stop_reason === 'max_tokens') throw new gemini.GeminiError('risposta troppo lunga', 413);
+  return JSON.parse(response.content.filter((b) => b.type === 'text').map((b) => b.text).join(''));
+}
+
+async function noteMaterial(noteId) {
+  const note = noteId ? getNote(noteId) : null;
+  if (!note) return { note: null, material: [] };
+  await ensureLocalFile(note);
+  return { note, material: noteToBlocks(note) };
+}
+
+function mapError(err, user, res, label) {
+  const { status, message } = err instanceof SyntaxError || /concetti/.test(err?.message || '')
+    ? { status: 502, message: 'L\'AI ha restituito una mappa non valida, riprova.' }
+    : apiErrorMessage(err, user);
+  if (!(err instanceof ContentTooLargeError)) console.error(`[AI ${label}]`, err?.message || err);
+  res.status(status).json({ error: message });
+}
+
+/** Crea una mappa concettuale per l'interrogazione a partire da un appunto e la salva. */
+router.post('/map', async (req, res) => {
+  if (!ensureAvailable(req, res)) return;
+  const instructions = String(req.body?.instructions || '').slice(0, 1000);
+  try {
+    const { note, material } = await noteMaterial(Number(req.body?.noteId) || null);
+    if (!note) return res.status(404).json({ error: 'Appunto non trovato.' });
+    const request = `Crea una mappa concettuale per preparare un'interrogazione sull'appunto "${note.title}" (materia "${note.subject_name}", argomento "${note.topic_name}").
+Deve aiutare lo studente a ripassare e a esporre l'argomento in modo ordinato: concetto centrale, 4-7 rami principali e per ognuno i sotto-concetti importanti.
+${material.length ? 'Basati sull\'appunto allegato.' : 'L\'appunto non è leggibile: usa le tue conoscenze sull\'argomento, a livello di scuola superiore.'}
+Dai alla mappa un titolo breve (es. "Rivoluzione francese").
+${MAP_RULES}
+${instructions ? `Indicazioni dello studente: ${instructions}` : ''}`;
+    const data = await askJson([...material, { type: 'text', text: request }], { geminiSchema: GEMINI_MAP_SCHEMA, schema: MAP_SCHEMA, userId: req.user.id, kind: 'map' });
+    const map = normalizeMap(data);
+    const mapId = saveMap({ userId: req.user.id, noteId: note.id, map });
+    res.status(201).json({ id: mapId, map: { ...map, id: mapId, note_id: note.id } });
+  } catch (err) {
+    mapError(err, req.user, res, 'map');
+  }
+});
+
+/** Modifica una mappa esistente secondo le richieste dello studente. */
+router.post('/map/:id/edit', async (req, res) => {
+  const map = getMap(Number(req.params.id), req.user);
+  if (!map) return res.status(404).json({ error: 'Mappa non trovata.' });
+  const instruction = String(req.body?.instruction || '').trim().slice(0, 1000);
+  if (!instruction) return res.status(400).json({ error: 'Scrivi come vuoi modificare la mappa.' });
+  if (!ensureAvailable(req, res)) return;
+  try {
+    const { material } = await noteMaterial(map.note_id);
+    const current = JSON.stringify({ title: map.title, nodes: map.nodes });
+    const request = `Questa è una mappa concettuale per l'interrogazione, in JSON:
+${current}
+
+Modificala secondo la richiesta dello studente: "${instruction}"
+Restituisci la mappa completa aggiornata, nello stesso formato. Lascia invariato ciò che non serve cambiare.
+${material.length ? 'Se aggiungi contenuti, basati sull\'appunto allegato.' : ''}
+${MAP_RULES}`;
+    const data = await askJson([...material, { type: 'text', text: request }], { geminiSchema: GEMINI_MAP_SCHEMA, schema: MAP_SCHEMA, userId: req.user.id, kind: 'map' });
+    const next = normalizeMap(data);
+    updateMap(map.id, next);
+    res.json({ map: { ...map, ...next } });
+  } catch (err) {
+    mapError(err, req.user, res, 'map edit');
   }
 });
 

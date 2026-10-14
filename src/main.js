@@ -10,6 +10,7 @@ import authRoutes from './routes/auth.js';
 import contentRoutes from './routes/content.js';
 import quizRoutes from './routes/quizzes.js';
 import aiRoutes from './routes/ai.js';
+import mapRoutes from './routes/maps.js';
 import adminRoutes from './routes/admin.js';
 import { adminDrive, driveCallback } from './routes/drive.js';
 import { startAutoSync } from './sync.js';
@@ -70,6 +71,7 @@ app.post('/api/presence', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/maps', mapRoutes);
 app.use('/api/admin/drive', adminDrive);
 app.use('/api/admin', adminRoutes);
 app.use('/api/drive', driveCallback);
