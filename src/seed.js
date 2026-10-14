@@ -4,20 +4,40 @@ import { db, getSetting, setSetting, transaction } from './db.js';
 import { config } from './config.js';
 
 export const DEFAULT_SUBJECTS = [
-  { name: 'Storia', icon: '🏛️', color: '#b45309', description: 'Eventi, epoche e protagonisti dal mondo antico a oggi.' },
-  { name: 'Filosofia', icon: '🦉', color: '#7c3aed', description: 'Pensatori, correnti e grandi domande della filosofia.' },
+  { name: 'Storia', icon: '🏛️', color: '#b45309', description: 'Eventi, epoche e protagonisti dall\'antichità a oggi.' },
+  { name: 'Filosofia', icon: '🦉', color: '#7c3aed', description: 'Pensatori, correnti e grandi domande.' },
   { name: 'Scienze umane', icon: '🧠', color: '#db2777', description: 'Psicologia, pedagogia, sociologia e antropologia.' },
   { name: 'Fisica', icon: '⚛️', color: '#0284c7', description: 'Leggi della natura, formule ed esperimenti.' },
-  { name: 'Italiano', icon: '📖', color: '#16a34a', description: 'Letteratura, autori, analisi del testo e grammatica.' },
-  { name: 'Spagnolo', icon: '🇪🇸', color: '#dc2626', description: 'Grammatica, lessico, letteratura e cultura ispanica.' },
+  { name: 'Italiano', icon: '📖', color: '#16a34a', description: 'Letteratura, autori, testi e grammatica.' },
+  { name: 'Spagnolo', icon: '🇪🇸', color: '#dc2626', description: 'Grammatica, lessico e cultura ispanica.' },
   { name: 'Inglese', icon: '🇬🇧', color: '#1d4ed8', description: 'Grammar, vocabulary, literature and culture.' },
-  { name: 'Matematica', icon: '📐', color: '#ea580c', description: 'Algebra, geometria, analisi ed esercizi svolti.' },
+  { name: 'Matematica', icon: '📐', color: '#ea580c', description: 'Algebra, geometria, analisi ed esercizi.' },
   { name: 'Diritto', icon: '⚖️', color: '#475569', description: 'Costituzione, istituzioni e principi del diritto.' },
-  { name: "Storia dell'arte", icon: '🎨', color: '#c026d3', description: 'Opere, artisti e movimenti dalla preistoria al contemporaneo.' },
+  { name: "Storia dell'arte", icon: '🎨', color: '#c026d3', description: 'Opere, artisti e movimenti artistici.' },
 ];
 
+// Descrizioni delle prime versioni, più lunghe (venivano tagliate nelle card): vengono aggiornate
+// solo se il proprietario non le ha cambiate.
+const OLD_DESCRIPTIONS = {
+  Storia: 'Eventi, epoche e protagonisti dal mondo antico a oggi.',
+  Filosofia: 'Pensatori, correnti e grandi domande della filosofia.',
+  Italiano: 'Letteratura, autori, analisi del testo e grammatica.',
+  Spagnolo: 'Grammatica, lessico, letteratura e cultura ispanica.',
+  Matematica: 'Algebra, geometria, analisi ed esercizi svolti.',
+  "Storia dell'arte": 'Opere, artisti e movimenti dalla preistoria al contemporaneo.',
+};
+
+function refreshOldDescriptions() {
+  const update = db.prepare("UPDATE subjects SET description = ? WHERE name = ? AND (description = ? OR description = '')");
+  for (const s of DEFAULT_SUBJECTS) {
+    if (OLD_DESCRIPTIONS[s.name] !== undefined) update.run(s.description, s.name, OLD_DESCRIPTIONS[s.name]);
+  }
+}
+
 export function seedDefaultSubjects() {
-  if (!config.seedDefaultSubjects || getSetting('default_subjects_seeded') === 'true') return 0;
+  if (!config.seedDefaultSubjects) return 0;
+  refreshOldDescriptions();
+  if (getSetting('default_subjects_seeded') === 'true') return 0;
   const exists = db.prepare('SELECT 1 FROM subjects WHERE name = ? COLLATE NOCASE');
   const insert = db.prepare('INSERT INTO subjects (name, description, icon, color) VALUES (?, ?, ?, ?)');
   const created = transaction(() => {

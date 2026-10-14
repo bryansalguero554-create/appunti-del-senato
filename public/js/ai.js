@@ -1,25 +1,69 @@
-import { state, $, esc, renderMarkdown } from './util.js';
+// Chat con l'assistente di studio (Gemini o Claude, a seconda della configurazione del server).
+import { state, $, esc, renderMarkdown, hasMath, ensureKatex, toast } from './util.js';
 
-const history = [];
+const STORE_KEY = 'ai-chat-v1';
+let history = loadHistory();
 let busy = false;
 let controller = null;
 
-const SUGGESTIONS = [
-  'Riassumimi i concetti chiave di questo argomento',
-  'Fammi 3 domande per verificare se ho capito',
-  'Spiegami la differenza tra i concetti più confusi',
-];
+function loadHistory() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(STORE_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter((m) => !m.pending) : [];
+  } catch {
+    return [];
+  }
+}
 
-function drawer() { return $('#ai-drawer'); }
+function saveHistory() {
+  try {
+    sessionStorage.setItem(STORE_KEY, JSON.stringify(history.slice(-40)));
+  } catch { /* spazio esaurito o modalità privata */ }
+}
+
+/** Suggerimenti adatti alla pagina che lo studente sta guardando. */
+function suggestions() {
+  const ctx = state.aiContext;
+  if (ctx?.noteId) {
+    return [
+      ['📝', 'Riassumi questo appunto in punti chiave'],
+      ['💡', 'Spiegami i concetti più difficili di questo appunto con parole semplici'],
+      ['🧠', 'Fammi 5 domande per verificare se ho capito questo appunto'],
+      ['🗺️', 'Crea una mappa concettuale di questo appunto'],
+    ];
+  }
+  if (ctx?.topicId) {
+    return [
+      ['📌', 'Quali sono i concetti fondamentali di questo argomento?'],
+      ['⏱️', 'Fammi un ripasso veloce di questo argomento in 10 righe'],
+      ['❓', 'Quali domande potrebbero chiedermi all\'interrogazione su questo argomento?'],
+    ];
+  }
+  if (ctx?.subjectId) {
+    return [
+      ['🧭', 'Da dove mi conviene iniziare a studiare questa materia?'],
+      ['📚', 'Dammi un metodo di studio efficace per questa materia'],
+    ];
+  }
+  return [
+    ['💬', 'Spiegami un concetto che non ho capito'],
+    ['📐', 'Aiutami a risolvere un esercizio passo passo'],
+    ['📅', 'Organizzami un piano di studio per la settimana'],
+  ];
+}
+
+const drawer = () => $('#ai-drawer');
 
 export function openAi(prefill) {
   drawer().classList.add('open');
   drawer().setAttribute('aria-hidden', 'false');
+  document.body.classList.add('ai-open');
   updateContext();
+  renderMessages();
   if (prefill) {
     $('#ai-input').value = prefill;
     send();
-  } else {
+  } else if (window.matchMedia('(pointer: fine)').matches) {
     $('#ai-input').focus();
   }
 }
@@ -27,13 +71,26 @@ export function openAi(prefill) {
 function closeAi() {
   drawer().classList.remove('open');
   drawer().setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('ai-open');
 }
 
 function updateContext() {
   const ctx = state.aiContext;
-  $('#ai-context').textContent = ctx ? `Contesto: ${ctx.label}` : 'Domanda libera';
+  $('#ai-context').textContent = ctx ? ctx.label : 'Domanda libera';
   $('#ai-attach-label').hidden = !ctx?.noteId;
-  if (ctx?.noteTitle) $('#ai-attach-label').lastChild.textContent = ` Usa "${ctx.noteTitle}" come riferimento`;
+  if (ctx?.noteTitle) $('#ai-attach-text').textContent = `Usa "${ctx.noteTitle}" come riferimento`;
+  if (drawer().classList.contains('open') && !history.length) renderMessages();
+}
+
+function assistantHtml(m, i, isLast) {
+  const actions = !m.pending && !m.error
+    ? `<div class="msg-actions">
+        <button type="button" data-copy="${i}" title="Copia">⧉ Copia</button>
+        ${isLast ? '<button type="button" data-regen title="Rigenera la risposta">↻ Rigenera</button>' : ''}
+      </div>`
+    : m.error ? '<div class="msg-actions"><button type="button" data-retry>↻ Riprova</button></div>' : '';
+  return `<div class="msg assistant ${m.error ? 'error' : ''} ${m.pending ? 'typing' : ''}">
+    <div class="prose">${m.error ? esc(m.content) : renderMarkdown(m.content)}</div>${actions}</div>`;
 }
 
 function renderMessages() {
@@ -43,27 +100,55 @@ function renderMessages() {
     return;
   }
   if (!history.length) {
+    const first = (state.user?.name || '').trim().split(/\s+/)[0];
     box.innerHTML = `
-      <div class="msg assistant">Ciao! Sono il tuo assistente di studio 🤓 Chiedimi qualsiasi dubbio: se apri un appunto posso leggerlo e spiegartelo.</div>
-      <div class="ai-suggestions">${SUGGESTIONS.map((s) => `<button class="btn btn-sm" data-suggest="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
+      <div class="ai-welcome">
+        <div class="ai-orb ai-orb-xl" aria-hidden="true"></div>
+        <h3>Ciao${first ? ` ${esc(first)}` : ''}, come posso aiutarti?</h3>
+        <p class="muted small">${state.aiContext?.noteId ? 'Sto guardando l\'appunto che hai aperto: chiedimi qualsiasi cosa.' : 'Chiedimi di spiegarti un argomento, risolvere un esercizio o prepararti all\'interrogazione.'}</p>
+      </div>
+      <div class="ai-suggestions">${suggestions().map(([icon, text]) => `<button type="button" class="ai-chip" data-suggest="${esc(text)}"><span>${icon}</span>${esc(text)}</button>`).join('')}</div>`;
     return;
   }
-  box.innerHTML = history.map((m) => (m.role === 'user'
+  const lastAssistant = history.map((m) => m.role).lastIndexOf('assistant');
+  box.innerHTML = history.map((m, i) => (m.role === 'user'
     ? `<div class="msg user">${esc(m.content)}</div>`
-    : `<div class="msg assistant ${m.error ? 'error' : ''} ${m.pending ? 'typing' : ''}"><div class="prose">${renderMarkdown(m.content)}</div></div>`)).join('');
-  box.scrollTop = box.scrollHeight;
+    : assistantHtml(m, i, i === lastAssistant))).join('');
+  // le formule vengono disegnate appena KaTeX è pronto
+  if (history.some((m) => m.role === 'assistant' && hasMath(m.content))) ensureKatex(renderMessages);
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 160;
+  if (nearBottom || busy) box.scrollTop = box.scrollHeight;
 }
 
-async function send() {
+function setBusy(value) {
+  busy = value;
+  const btn = $('#ai-send');
+  btn.classList.toggle('stop', value);
+  btn.textContent = value ? '■' : '↑';
+  btn.setAttribute('aria-label', value ? 'Ferma la risposta' : 'Invia');
+}
+
+function autosize() {
+  const t = $('#ai-input');
+  t.style.height = 'auto';
+  t.style.height = `${Math.min(t.scrollHeight, 160)}px`;
+}
+
+async function send(textOverride) {
   const input = $('#ai-input');
-  const text = input.value.trim();
+  const text = (textOverride ?? input.value).trim();
   if (!text || busy || !state.site.aiEnabled) return;
   input.value = '';
+  autosize();
   history.push({ role: 'user', content: text });
+  await ask();
+}
+
+/** Invia la conversazione e riceve la risposta in streaming. */
+async function ask() {
   const reply = { role: 'assistant', content: '', pending: true };
   history.push(reply);
-  busy = true;
-  $('#ai-send').disabled = true;
+  setBusy(true);
   renderMessages();
 
   const ctx = state.aiContext || {};
@@ -98,20 +183,30 @@ async function send() {
     if (!reply.content.trim()) reply.content = '_(nessuna risposta)_';
   } catch (err) {
     if (err.name === 'AbortError') {
-      reply.content += '\n\n_(interrotto)_';
+      reply.content += reply.content ? '\n\n_(risposta interrotta)_' : '_(risposta interrotta)_';
     } else {
-      reply.content = err.message;
+      reply.content = err.message === 'Failed to fetch' ? 'Connessione assente: controlla internet e riprova.' : err.message;
       reply.error = true;
-      // la domanda resta visibile ma non viene reinviata come contesto
+      // la domanda resta visibile ma non viene reinviata come contesto finché non si riprova
       history[history.indexOf(reply) - 1].excluded = true;
     }
   } finally {
     reply.pending = false;
-    busy = false;
     controller = null;
-    $('#ai-send').disabled = false;
+    setBusy(false);
+    saveHistory();
     renderMessages();
   }
+}
+
+/** Rigenera l'ultima risposta (o riprova dopo un errore). */
+function regenerate() {
+  if (busy) return;
+  const lastUser = history.map((m) => m.role).lastIndexOf('user');
+  if (lastUser < 0) return;
+  history = history.slice(0, lastUser + 1);
+  delete history[lastUser].excluded;
+  ask();
 }
 
 export function initAi() {
@@ -119,17 +214,41 @@ export function initAi() {
   $('#ai-close').addEventListener('click', closeAi);
   $('#ai-clear').addEventListener('click', () => {
     controller?.abort();
-    history.length = 0;
+    history = [];
+    saveHistory();
     renderMessages();
+    $('#ai-input').focus();
   });
-  $('#ai-form').addEventListener('submit', (e) => { e.preventDefault(); send(); });
-  $('#ai-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  $('#ai-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (busy) controller?.abort();
+    else send();
   });
-  $('#ai-messages').addEventListener('click', (e) => {
-    const s = e.target.closest('[data-suggest]');
-    if (s) { $('#ai-input').value = s.dataset.suggest; send(); }
+  const input = $('#ai-input');
+  input.addEventListener('input', autosize);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(pointer: fine)').matches) {
+      e.preventDefault();
+      if (!busy) send();
+    }
   });
+  $('#ai-messages').addEventListener('click', async (e) => {
+    const chip = e.target.closest('[data-suggest]');
+    if (chip) return send(chip.dataset.suggest);
+    const copy = e.target.closest('[data-copy]');
+    if (copy) {
+      try {
+        await navigator.clipboard.writeText(history[Number(copy.dataset.copy)].content);
+        toast('Risposta copiata');
+      } catch {
+        toast('Copia non riuscita', 'error');
+      }
+      return undefined;
+    }
+    if (e.target.closest('[data-regen], [data-retry]')) regenerate();
+    return undefined;
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && drawer().classList.contains('open')) closeAi(); });
   window.addEventListener('ai-context', updateContext);
   renderMessages();
   updateContext();
