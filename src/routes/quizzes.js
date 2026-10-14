@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, transaction } from '../db.js';
-import { requireAuth, canManage } from '../auth.js';
+import { requireAuth, requireRole, canManage } from '../auth.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -30,6 +30,17 @@ function saveQuestions(quizId, questions) {
   const insert = db.prepare(`INSERT INTO quiz_questions (quiz_id, position, question, options, correct_index, explanation)
                              VALUES (?, ?, ?, ?, ?, ?)`);
   questions.forEach((q, i) => insert.run(quizId, i, q.question, JSON.stringify(q.options), q.correct_index, q.explanation));
+}
+
+/** Salva un nuovo quiz (usato dalla generazione con l'AI). */
+export function saveQuiz(quiz, userId) {
+  return transaction(() => {
+    const { lastInsertRowid } = db.prepare(`INSERT INTO quizzes (subject_id, topic_id, user_id, title, description, ai_generated)
+                                            VALUES (?, ?, ?, ?, ?, 1)`)
+      .run(quiz.subject_id, quiz.topic_id, userId, quiz.title, quiz.description);
+    saveQuestions(Number(lastInsertRowid), quiz.questions);
+    return Number(lastInsertRowid);
+  });
 }
 
 router.get('/', (req, res) => {
@@ -77,7 +88,8 @@ router.get('/:id', (req, res) => {
   res.json({ quiz: { ...quiz, canManage: manage }, questions, leaderboard });
 });
 
-router.post('/', (req, res) => {
+// I quiz si creano con l'AI (/api/ai/quiz); la creazione manuale resta solo per proprietario e moderatori.
+router.post('/', requireRole('moderator'), (req, res) => {
   const b = req.body || {};
   const title = str(b.title, 150);
   if (!title) return res.status(400).json({ error: 'Il titolo è obbligatorio.' });

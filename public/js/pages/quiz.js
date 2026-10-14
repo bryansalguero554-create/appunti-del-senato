@@ -1,6 +1,7 @@
 import {
-  state, api, esc, timeAgo, emptyState, confirmDialog, toast, toastError, setAiContext, spinner,
+  api, esc, timeAgo, emptyState, confirmDialog, toast, toastError, setAiContext,
 } from '../util.js';
+import { openQuizGenerator } from '../quizgen.js';
 
 // ---------- Elenco ----------
 
@@ -10,10 +11,9 @@ export async function renderQuizList(app) {
 
   app.innerHTML = `
     <div class="page-head">
-      <div class="titles"><h1>✅ Quiz di verifica</h1><p class="muted">Mettiti alla prova sugli argomenti che stai studiando.</p></div>
+      <div class="titles"><h1>✅ Quiz di verifica</h1><p class="muted">Scegli materia e argomento: l'AI prepara il quiz sui tuoi appunti.</p></div>
       <div class="row">
-        ${state.site.aiEnabled ? '<a class="btn" href="#/quiz/nuovo?ai=1">✨ Genera con AI</a>' : ''}
-        <a class="btn btn-primary" href="#/quiz/nuovo">＋ Crea quiz</a>
+        <button class="btn btn-primary btn-lg" id="gen-quiz">✨ Genera un quiz</button>
       </div>
     </div>
     ${subjects.length > 1 ? `<div class="chips" id="subject-chips" style="margin-bottom:16px">
@@ -32,9 +32,10 @@ export async function renderQuizList(app) {
         </div>
         ${q.ai_generated ? '<span class="badge badge-ai">AI</span>' : ''}
         ${q.best !== null ? `<span class="badge ${q.best >= 0.6 ? 'badge-online' : ''}">Record ${Math.round(q.best * 100)}%</span>` : ''}
-      </a>`).join('') || emptyState('📝', 'Nessun quiz ancora. Creane uno!');
+      </a>`).join('') || emptyState('📝', 'Nessun quiz ancora: fattene preparare uno dall\'AI!');
   };
   draw();
+  app.querySelector('#gen-quiz').addEventListener('click', () => openQuizGenerator({ subjectId: filter === 'all' ? null : Number(filter) }));
   app.querySelector('#subject-chips')?.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
@@ -105,10 +106,12 @@ export async function renderQuizTake(app, { params: [id] }) {
       const sc = app.querySelector('#score-card');
       sc.innerHTML = `<div class="muted">Il tuo punteggio</div><div class="score-big">${result.score}/${result.total}</div>
         <p>${pct}% – ${pct >= 90 ? 'Eccellente! 🏆' : pct >= 70 ? 'Ottimo lavoro! 💪' : pct >= 50 ? 'Ci sei quasi, ripassa gli errori 📚' : 'Meglio ripassare l\'argomento 📖'}</p>
-        <button class="btn" id="retry">🔄 Riprova</button>`;
+        <div class="row" style="justify-content:center"><button class="btn" id="retry">🔄 Riprova</button>
+        <button class="btn btn-primary" id="new-quiz">✨ Nuovo quiz</button></div>`;
       sc.hidden = false;
       sc.scrollIntoView({ behavior: 'smooth', block: 'center' });
       sc.querySelector('#retry').addEventListener('click', () => renderQuizTake(app, { params: [id] }));
+      sc.querySelector('#new-quiz').addEventListener('click', () => openQuizGenerator({ subjectId: quiz.subject_id, topicId: quiz.topic_id }));
       app.querySelector('#submit-quiz').hidden = true;
     } catch (err) {
       toastError(err);
@@ -128,48 +131,27 @@ export async function renderQuizTake(app, { params: [id] }) {
 const blankQuestion = () => ({ question: '', options: ['', '', '', ''], correct_index: 0, explanation: '' });
 
 export async function renderQuizEditor(app, { params: [quizId], query, isStale }) {
-  const { subjects } = await api('/subjects');
-  if (!subjects.length) {
-    app.innerHTML = emptyState('🗂️', 'Prima di creare un quiz serve almeno una materia.', '<a class="btn" href="#/">Torna alle materie</a>');
+  // I quiz nuovi si creano solo con l'AI: "#/quiz/nuovo" apre il generatore.
+  if (!quizId) {
+    await renderQuizList(app);
+    openQuizGenerator({
+      subjectId: Number(query.get('materia')) || null,
+      topicId: Number(query.get('argomento')) || null,
+      noteId: Number(query.get('appunto')) || null,
+    });
     return;
   }
-  let draft = { title: '', description: '', subject_id: Number(query.get('materia')) || null, topic_id: Number(query.get('argomento')) || null, ai_generated: false, questions: [blankQuestion()] };
-  const noteId = Number(query.get('appunto')) || null;
-  let noteInfo = null;
-
-  if (quizId) {
-    const data = await api(`/quizzes/${quizId}?edit=1`);
-    if (!data.quiz.canManage) throw new Error('Non puoi modificare questo quiz.');
-    draft = { ...data.quiz, questions: data.questions.map((q) => ({ ...q })) };
-  } else if (noteId) {
-    noteInfo = (await api(`/notes/${noteId}`)).note;
-    draft.subject_id = noteInfo.subject_id;
-    draft.topic_id = noteInfo.topic_id;
-  } else if (draft.topic_id) {
-    const { topic } = await api(`/topics/${draft.topic_id}`);
-    draft.subject_id = topic.subject_id;
-  }
+  const { subjects } = await api('/subjects');
+  const data = await api(`/quizzes/${quizId}?edit=1`);
+  if (!data.quiz.canManage) throw new Error('Non puoi modificare questo quiz.');
+  let draft = { ...data.quiz, questions: data.questions.map((q) => ({ ...q })) };
   if (isStale()) return;
-  draft.subject_id ??= subjects[0].id;
-  const showAi = state.site.aiEnabled && !quizId;
 
   app.innerHTML = `
     <div class="page-head">
-      <div class="titles"><div class="breadcrumb"><a href="#/quiz">Quiz</a> ›</div><h1>${quizId ? 'Modifica quiz' : 'Nuovo quiz'}</h1></div>
+      <div class="titles"><div class="breadcrumb"><a href="#/quiz">Quiz</a> ›</div><h1>Modifica quiz</h1></div>
     </div>
 
-    ${showAi ? `
-    <div class="card" style="margin-bottom:20px">
-      <h2>✨ Genera con l'AI</h2>
-      <p class="muted small">${noteInfo ? `L'AI creerà le domande leggendo l'appunto <strong>${esc(noteInfo.title)}</strong>.` : 'L\'AI leggerà gli appunti dell\'argomento scelto qui sotto e preparerà le domande. Potrai rivederle prima di salvare.'}</p>
-      <div class="field-row">
-        <div class="field"><label>Numero di domande</label><input type="number" id="ai-count" min="3" max="25" value="8"></div>
-        <div class="field"><label>Difficoltà</label><select id="ai-diff"><option value="facile">Facile</option><option value="media" selected>Media</option><option value="difficile">Difficile</option></select></div>
-      </div>
-      <div class="field"><label>Indicazioni (facoltative)</label><input id="ai-instr" maxlength="1000" placeholder="Es. concentrati sulle date principali"></div>
-      <button class="btn btn-primary" id="ai-generate" type="button">✨ Genera domande</button>
-      <div id="ai-status"></div>
-    </div>` : ''}
 
     <form id="editor">
       <div class="card" style="margin-bottom:20px">
@@ -255,37 +237,6 @@ export async function renderQuizEditor(app, { params: [quizId], query, isStale }
     draft.questions.push(blankQuestion());
     drawQuestions();
     qBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
-  });
-
-  app.querySelector('#ai-generate')?.addEventListener('click', async (e) => {
-    const topicId = Number(topicSel.value) || null;
-    if (!noteId && !topicId) return toast('Scegli prima un argomento qui sotto.', 'error');
-    const btn = e.currentTarget;
-    const status = app.querySelector('#ai-status');
-    btn.disabled = true;
-    status.innerHTML = `${spinner()}<p class="muted small" style="text-align:center">L'AI sta leggendo gli appunti e preparando le domande… può richiedere fino a un minuto.</p>`;
-    try {
-      const { quiz } = await api('/ai/quiz', {
-        method: 'POST',
-        body: {
-          noteId, topicId,
-          count: Number(app.querySelector('#ai-count').value),
-          difficulty: app.querySelector('#ai-diff').value,
-          instructions: app.querySelector('#ai-instr').value,
-        },
-      });
-      draft = { ...draft, ...quiz, ai_generated: true };
-      app.querySelector('[name="title"]').value = quiz.title;
-      app.querySelector('[name="description"]').value = quiz.description;
-      drawQuestions();
-      status.innerHTML = '<p class="small" style="color:var(--success)">✅ Domande generate! Controllale e poi salva il quiz.</p>';
-      qBox.scrollIntoView({ behavior: 'smooth' });
-    } catch (err) {
-      status.innerHTML = '';
-      toastError(err);
-    } finally {
-      btn.disabled = false;
-    }
   });
 
   app.querySelector('#editor').addEventListener('submit', async (e) => {

@@ -5,7 +5,7 @@ import { config } from '../config.js';
 import { requireAuth, hasRole } from '../auth.js';
 import { noteToBlocks, ContentTooLargeError } from '../extract.js';
 import { getNote } from './content.js';
-import { normalizeQuestions } from './quizzes.js';
+import { normalizeQuestions, saveQuiz } from './quizzes.js';
 import { ensureLocalFile } from '../sync.js';
 import * as gemini from '../gemini.js';
 
@@ -215,10 +215,13 @@ router.post('/chat', async (req, res) => {
   }
 });
 
-/** Collezione degli appunti di un argomento leggibili dall'AI, entro un budget di dimensione. */
-async function topicMaterial(topicId) {
-  const notes = db.prepare(`SELECT n.*, u.name AS author_name FROM notes n LEFT JOIN users u ON u.id = n.user_id
-                            WHERE n.topic_id = ? ORDER BY n.created_at DESC`).all(topicId);
+/** Appunti leggibili dall'AI di un argomento (o di tutta la materia), entro un budget di dimensione. */
+async function collectMaterial({ topicId, subjectId }) {
+  const notes = topicId
+    ? db.prepare(`SELECT n.*, u.name AS author_name FROM notes n LEFT JOIN users u ON u.id = n.user_id
+                  WHERE n.topic_id = ? ORDER BY n.created_at DESC`).all(topicId)
+    : db.prepare(`SELECT n.*, u.name AS author_name FROM notes n LEFT JOIN users u ON u.id = n.user_id
+                  JOIN topics t ON t.id = n.topic_id WHERE t.subject_id = ? ORDER BY n.created_at DESC`).all(subjectId);
   const blocks = [];
   let budget = (useGemini ? 13 : 24) * 1024 * 1024;
   let docs = 0;
@@ -238,36 +241,47 @@ async function topicMaterial(topicId) {
   return blocks;
 }
 
-/** Genera un quiz (da rivedere nell'editor prima del salvataggio). */
+/**
+ * Genera un quiz con l'AI e lo salva subito: i quiz del sito sono creati solo dall'AI.
+ * Fonte: un appunto (noteId), un argomento (topicId) o un'intera materia (subjectId).
+ */
 router.post('/quiz', async (req, res) => {
   if (!ensureAvailable(req, res)) return;
-  const count = Math.min(Math.max(Number(req.body?.count) || 8, 3), 25);
+  const count = Math.min(Math.max(Number(req.body?.count) || 10, 3), 25);
   const difficulty = ['facile', 'media', 'difficile'].includes(req.body?.difficulty) ? req.body.difficulty : 'media';
   const instructions = String(req.body?.instructions || '').slice(0, 1000);
   const noteId = Number(req.body?.noteId) || null;
   let topicId = Number(req.body?.topicId) || null;
+  let subjectId = Number(req.body?.subjectId) || null;
 
   try {
     let material = [];
+    let noteTitle = null;
     if (noteId) {
       const note = getNote(noteId);
       if (!note) return res.status(404).json({ error: 'Appunto non trovato.' });
       topicId = note.topic_id;
+      noteTitle = note.title;
       await ensureLocalFile(note);
       material = noteToBlocks(note);
     }
-    const topic = topicId
-      ? db.prepare('SELECT t.id, t.name, t.subject_id, s.name AS subject FROM topics t JOIN subjects s ON s.id = t.subject_id WHERE t.id = ?').get(topicId)
-      : null;
-    if (!topic) return res.status(400).json({ error: 'Seleziona un argomento o un appunto.' });
-    if (!noteId) material = await topicMaterial(topic.id);
+    const topic = topicId ? db.prepare('SELECT id, name, subject_id FROM topics WHERE id = ?').get(topicId) : null;
+    if (topicId && !topic) return res.status(400).json({ error: 'Argomento non valido.' });
+    if (topic) subjectId = topic.subject_id;
+    const subject = subjectId ? db.prepare('SELECT id, name FROM subjects WHERE id = ?').get(subjectId) : null;
+    if (!subject) return res.status(400).json({ error: 'Scegli la materia del quiz.' });
+    if (!noteId) material = await collectMaterial({ topicId: topic?.id, subjectId: subject.id });
 
-    const request = `Crea un quiz di verifica a scelta multipla in italiano per la materia "${topic.subject}", argomento "${topic.name}".
-- Numero di domande: ${count}
+    const scope = noteTitle
+      ? `sull'appunto "${noteTitle}" (materia "${subject.name}", argomento "${topic.name}")`
+      : topic ? `per la materia "${subject.name}", argomento "${topic.name}"` : `per la materia "${subject.name}" (tutti gli argomenti)`;
+    const request = `Crea un quiz di verifica a scelta multipla in italiano ${scope}.
+- Numero di domande: esattamente ${count}
 - Difficoltà: ${difficulty}
 - Ogni domanda deve avere 4 risposte, una sola corretta (correct_index parte da 0), e una breve spiegazione della risposta giusta.
-- Varia la posizione della risposta corretta e rendi plausibili le risposte sbagliate.
-${material.length ? '- Basa le domande sugli appunti allegati.' : '- Non ci sono appunti leggibili: usa le tue conoscenze sull\'argomento.'}
+- Varia la posizione della risposta corretta e rendi plausibili le risposte sbagliate. Non ripetere domande.
+- Dai al quiz un titolo breve e specifico (es. "Rivoluzione francese: cause e fasi") e una descrizione di una riga.
+${material.length ? '- Basa le domande sugli appunti allegati.' : '- Non ci sono appunti leggibili: usa le tue conoscenze sull\'argomento, a livello di scuola superiore.'}
 ${instructions ? `Indicazioni aggiuntive dello studente: ${instructions}` : ''}`;
 
     const content = [...material, { type: 'text', text: request }];
@@ -289,17 +303,18 @@ ${instructions ? `Indicazioni aggiuntive dello studente: ${instructions}` : ''}`
       if (response.stop_reason === 'max_tokens') return res.status(422).json({ error: 'Quiz troppo lungo: riduci il numero di domande.' });
       data = JSON.parse(response.content.filter((b) => b.type === 'text').map((b) => b.text).join(''));
     }
-    res.json({
-      quiz: {
-        title: String(data.title || `Quiz: ${topic.name}`).slice(0, 150),
-        description: String(data.description || '').slice(0, 1000),
-        topic_id: topic.id,
-        subject_id: topic.subject_id,
-        questions: normalizeQuestions(data.questions),
-      },
-    });
+
+    const quiz = {
+      title: String(data.title || `Quiz di ${topic?.name || subject.name}`).slice(0, 150),
+      description: String(data.description || '').slice(0, 1000),
+      subject_id: subject.id,
+      topic_id: topic?.id ?? null,
+      questions: normalizeQuestions(data.questions),
+    };
+    const id = saveQuiz(quiz, req.user.id);
+    res.status(201).json({ id, quiz: { ...quiz, id } });
   } catch (err) {
-    const { status, message } = err instanceof SyntaxError || /Domanda \d+/.test(err?.message || '')
+    const { status, message } = err instanceof SyntaxError || /Domanda \d+|almeno una domanda/.test(err?.message || '')
       ? { status: 502, message: 'L\'AI ha restituito un quiz non valido, riprova.' }
       : apiErrorMessage(err);
     if (!(err instanceof ContentTooLargeError)) console.error('[AI quiz]', err?.message || err);

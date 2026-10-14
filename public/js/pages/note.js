@@ -3,6 +3,7 @@ import {
   setAiContext, renderMarkdown, sanitize, loadScript, spinner,
 } from '../util.js';
 import { openAi } from '../ai.js';
+import { openQuizGenerator } from '../quizgen.js';
 
 // SheetJS non è più pubblicato su npm: viene caricato dal suo CDN ufficiale solo quando serve.
 const SHEETJS_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
@@ -26,6 +27,17 @@ function parseCsv(text, sep) {
 
 const tableHtml = (rows) => `<table>${rows.slice(0, 5000).map((r, i) => `<tr>${r.map((c) => (i === 0 ? `<th>${esc(c)}</th>` : `<td>${esc(c)}</td>`)).join('')}</tr>`).join('')}</table>`;
 
+/** Decodifica una pagina HTML rispettando la codifica dichiarata (es. windows-1252), utf-8 altrimenti. */
+function decodeHtml(buffer) {
+  const head = new TextDecoder('latin1').decode(buffer.slice(0, 4096));
+  const declared = head.match(/<meta[^>]+charset\s*=\s*["']?\s*([\w-]+)/i)?.[1];
+  try {
+    return new TextDecoder(declared || 'utf-8').decode(buffer);
+  } catch {
+    return new TextDecoder('utf-8').decode(buffer);
+  }
+}
+
 async function renderViewer(el, note) {
   const url = `/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}`;
   const ext = note.ext;
@@ -37,8 +49,29 @@ async function renderViewer(el, note) {
       <a class="btn btn-primary" href="${url}?download=1">⬇️ Scarica il file</a></div>`;
   };
 
+  if (mime === 'text/html' || mime === 'application/xhtml+xml') {
+    // Le pagine HTML vengono lette e mostrate con srcdoc in un iframe sandbox (origine isolata, niente accesso
+    // al sito). Funziona anche su iPhone/iPad, dove l'iframe caricato direttamente può essere bloccato.
+    el.innerHTML = spinner();
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        return noPreview(res.status === 404
+          ? 'Il file non è più disponibile sul server. Se il Drive non era ancora collegato, il riavvio del server gratuito lo ha cancellato: ricaricalo.'
+          : `Impossibile aprire la pagina (errore ${res.status}).`);
+      }
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals');
+      frame.title = note.title;
+      frame.srcdoc = decodeHtml(await res.arrayBuffer());
+      el.replaceChildren(frame);
+    } catch (err) {
+      noPreview(`Impossibile aprire la pagina (${esc(err.message)}).`);
+    }
+    return;
+  }
   if (note.policy === 'sandbox') {
-    // HTML / SVG caricati dagli utenti: isolati in un iframe sandbox (anche il server applica una CSP sandbox).
+    // SVG / XML caricati dagli utenti: isolati in un iframe sandbox (anche il server applica una CSP sandbox).
     el.innerHTML = `<iframe src="${url}" sandbox="allow-scripts allow-popups allow-forms" title="${esc(note.title)}"></iframe>`;
     return;
   }
@@ -120,20 +153,42 @@ export async function renderNote(app, { params: [id] }) {
         <div class="meta-row"><span class="muted">Caricato</span><span>${formatDate(note.created_at)}</span></div>
         ${note.fromDrive ? '<div class="meta-row"><span class="muted">Origine</span><span>☁️ Google Drive</span></div>' : ''}
         <div class="actions">
+          <button class="btn btn-primary" id="fullscreen">⤢ Schermo intero</button>
           <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}" target="_blank" rel="noopener">↗️ Apri in una nuova scheda</a>
           <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}?download=1">⬇️ Scarica</a>
           ${state.site.aiEnabled ? `<button class="btn" id="ai-explain">🤖 Spiegami questo appunto</button>
           <button class="btn" id="ai-ask">💬 Ho un dubbio</button>
-          <a class="btn" href="#/quiz/nuovo?appunto=${note.id}&ai=1">✨ Genera quiz da questo appunto</a>` : ''}
+          <button class="btn" id="gen-quiz">✨ Genera quiz da questo appunto</button>` : ''}
           ${note.canManage ? '<button class="btn" id="edit-note">✏️ Modifica</button><button class="btn btn-danger" id="delete-note">🗑️ Elimina</button>' : ''}
         </div>
       </aside>
     </div>`;
 
-  renderViewer(app.querySelector('#viewer'), note);
+  const viewer = app.querySelector('#viewer');
+  renderViewer(viewer, note);
+
+  // "Schermo intero" fatto in CSS: funziona anche su iPhone, dove l'API Fullscreen non esiste per le pagine.
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'viewer-close';
+  closeBtn.setAttribute('aria-label', 'Esci dallo schermo intero');
+  closeBtn.textContent = '✕';
+  const exitFull = () => {
+    viewer.classList.remove('is-full');
+    document.body.classList.remove('no-scroll');
+    closeBtn.remove();
+    window.removeEventListener('route-change', exitFull);
+  };
+  closeBtn.addEventListener('click', exitFull);
+  app.querySelector('#fullscreen').addEventListener('click', () => {
+    viewer.classList.add('is-full');
+    document.body.classList.add('no-scroll');
+    viewer.append(closeBtn);
+    window.addEventListener('route-change', exitFull);
+  });
 
   app.querySelector('#ai-explain')?.addEventListener('click', () => openAi('Spiegami in modo semplice e ordinato i concetti principali di questo appunto, poi fammi un breve riassunto finale.'));
   app.querySelector('#ai-ask')?.addEventListener('click', () => openAi());
+  app.querySelector('#gen-quiz')?.addEventListener('click', () => openQuizGenerator({ noteId: note.id, noteTitle: note.title }));
   app.querySelector('#edit-note')?.addEventListener('click', () => {
     openModal('Modifica appunto', `
       <form>

@@ -102,15 +102,32 @@ test('la chat usa Gemini con il modello Flash più recente e l\'appunto allegato
   assert.equal(parts.at(-1).text, 'Quando fu presa la Bastiglia?');
 });
 
-test('i quiz vengono generati con Gemini in JSON', async () => {
+test('i quiz vengono generati con Gemini e salvati subito', async () => {
   const subjects = await (await call('GET', '/api/subjects')).json();
   const detail = await (await call('GET', `/api/subjects/${subjects.subjects[0].id}`)).json();
-  const res = await call('POST', '/api/ai/quiz', { topicId: detail.topics[0].id, count: 3 });
+  const res = await call('POST', '/api/ai/quiz', { topicId: detail.topics[0].id, count: 3, difficulty: 'facile' });
   const data = await res.json();
-  assert.equal(res.status, 200, JSON.stringify(data));
-  assert.equal(data.quiz.title, 'Quiz Gemini');
-  assert.equal(data.quiz.questions[0].correct_index, 0);
+  assert.equal(res.status, 201, JSON.stringify(data));
+  const saved = await (await call('GET', `/api/quizzes/${data.id}`)).json();
+  assert.equal(saved.quiz.title, 'Quiz Gemini');
+  assert.equal(saved.quiz.ai_generated, 1);
+  assert.equal(saved.quiz.topic_id, detail.topics[0].id);
+  assert.equal(saved.questions.length, 1);
+  assert.equal(saved.questions[0].correct_index, undefined, 'soluzioni nascoste a chi svolge il quiz');
   const sent = requests.find((r) => r.url.includes(':generateContent') && !r.url.includes('stream'));
   assert.equal(sent.body.generationConfig.responseMimeType, 'application/json');
   assert.equal(sent.body.generationConfig.responseSchema.type, 'OBJECT');
+  assert.match(sent.body.contents[0].parts.at(-1).text, /esattamente 3/);
+});
+
+test('quiz su tutta la materia, senza scegliere un argomento', async () => {
+  const subjects = await (await call('GET', '/api/subjects')).json();
+  const res = await call('POST', '/api/ai/quiz', { subjectId: subjects.subjects[1].id, count: 5 });
+  assert.equal(res.status, 201);
+  const { id } = await res.json();
+  const saved = await (await call('GET', `/api/quizzes/${id}`)).json();
+  assert.equal(saved.quiz.subject_id, subjects.subjects[1].id);
+  assert.equal(saved.quiz.topic_id, null);
+  const prompt = requests.filter((r) => r.url.includes(':generateContent') && !r.url.includes('stream')).at(-1).body.contents[0].parts.at(-1).text;
+  assert.match(prompt, /tutti gli argomenti/);
 });
