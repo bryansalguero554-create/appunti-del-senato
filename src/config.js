@@ -1,0 +1,30 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// Carica .env se presente (Node >= 21.7), senza dipendenze esterne.
+try {
+  process.loadEnvFile(path.join(root, '.env'));
+} catch {
+  // nessun file .env: si usano solo le variabili d'ambiente
+}
+
+const env = process.env;
+
+export const config = {
+  root,
+  port: Number(env.PORT) || 3000,
+  dataDir: path.resolve(root, env.DATA_DIR || 'data'),
+  uploadDir: path.resolve(root, env.UPLOAD_DIR || 'uploads'),
+  maxUploadMb: Number(env.MAX_UPLOAD_MB) || 50,
+  sessionDays: Number(env.SESSION_DAYS) || 30,
+  secureCookies: env.COOKIE_SECURE === 'true',
+  trustProxy: env.TRUST_PROXY === 'true',
+  ownerEmail: (env.OWNER_EMAIL || 'bryansalguero26@icloud.com').trim().toLowerCase(),
+  ownerPassword: env.OWNER_PASSWORD || '',
+  ownerName: env.OWNER_NAME || 'Proprietario',
+  aiModel: env.AI_MODEL || 'claude-opus-5-5',
+  aiEnabled: Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN),
+  aiDailyLimit: Number(env.AI_DAILY_LIMIT) || 100,
+};

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appunti del Senato</title>
+  <meta name="description" content="Piattaforma di studio con appunti condivisi, quiz e assistente AI.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/vendor/marked.js" defer></script>
+  <script src="/vendor/purify.js" defer></script>
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <header class="topbar" id="topbar" hidden>
+    <a class="brand" href="#/"><span class="brand-icon">📚</span><span id="site-name">Appunti</span></a>
+    <form class="search" id="search-form" role="search">
+      <input id="search-input" type="search" placeholder="Cerca materie, argomenti, appunti…" autocomplete="off" aria-label="Cerca">
+      <div class="search-results" id="search-results" hidden></div>
+    </form>
+    <button class="icon-btn menu-toggle" id="menu-toggle" aria-label="Menu">☰</button>
+    <nav class="nav" id="nav">
+      <a href="#/" data-nav="home">Materie</a>
+      <a href="#/quiz" data-nav="quiz">Quiz</a>
+      <a href="#/profilo" data-nav="profilo">Profilo</a>
+      <a href="#/admin" data-nav="admin" class="nav-vip" id="nav-admin" hidden>👑 Area riservata</a>
+      <button class="btn btn-ghost btn-sm" id="logout-btn">Esci</button>
+    </nav>
+  </header>
+  <div class="announcement" id="announcement" hidden></div>
+  <main id="app" class="container"></main>
+
+  <button class="ai-fab" id="ai-fab" hidden aria-label="Chiedi all'assistente AI">🤖 <span>Chiedi all'AI</span></button>
+  <aside class="ai-drawer" id="ai-drawer" aria-hidden="true">
+    <div class="ai-head">
+      <div>
+        <strong>Assistente di studio</strong>
+        <div class="ai-context" id="ai-context"></div>
+      </div>
+      <div class="ai-head-actions">
+        <button class="icon-btn" id="ai-clear" title="Nuova conversazione">🗑️</button>
+        <button class="icon-btn" id="ai-close" title="Chiudi">✕</button>
+      </div>
+    </div>
+    <div class="ai-messages" id="ai-messages"></div>
+    <form class="ai-form" id="ai-form">
+      <label class="ai-attach" id="ai-attach-label" hidden><input type="checkbox" id="ai-attach" checked> Usa l'appunto aperto come riferimento</label>
+      <div class="ai-input-row">
+        <textarea id="ai-input" rows="2" placeholder="Scrivi il tuo dubbio… (Invio per inviare, Maiusc+Invio per andare a capo)"></textarea>
+        <button class="btn btn-primary" id="ai-send" type="submit">Invia</button>
+      </div>
+    </form>
+  </aside>
+
+  <div class="modal-backdrop" id="modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head"><h3 id="modal-title"></h3><button class="icon-btn" id="modal-close" aria-label="Chiudi">✕</button></div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+  <div class="toasts" id="toasts"></div>
+</body>
+</html>

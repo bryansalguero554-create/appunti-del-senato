@@ -1,0 +1,27 @@
+{
+  "name": "appunti-del-senato",
+  "version": "1.0.0",
+  "description": "Piattaforma di studio: appunti multi-formato divisi per materia e argomento, quiz, assistente AI e area riservata al proprietario.",
+  "type": "module",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server.js",
+    "set-owner-password": "node --disable-warning=ExperimentalWarning scripts/set-owner-password.js",
+    "test": "node --disable-warning=ExperimentalWarning --test"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
+    "bcryptjs": "^3.0.3",
+    "dompurify": "^3.4.17",
+    "express": "^5.3.0",
+    "mammoth": "^1.13.0",
+    "marked": "^18.1.1",
+    "multer": "^2.4.0",
+    "pdfjs-dist": "^4.10.38"
+  }
+}
