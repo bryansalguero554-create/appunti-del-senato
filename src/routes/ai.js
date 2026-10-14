@@ -6,11 +6,21 @@ import { requireAuth, hasRole } from '../auth.js';
 import { noteToBlocks, ContentTooLargeError } from '../extract.js';
 import { getNote } from './content.js';
 import { normalizeQuestions } from './quizzes.js';
+import { ensureLocalFile } from '../sync.js';
+import * as gemini from '../gemini.js';
 
 const router = Router();
 router.use(requireAuth);
 
-const client = config.aiEnabled ? new Anthropic() : null;
+const useGemini = config.aiProvider === 'gemini';
+const client = config.aiProvider === 'anthropic' ? new Anthropic() : null;
+
+// Gemini accetta al massimo ~20 MB per richiesta (file inclusi, codificati in base64).
+const GEMINI_MAX_INLINE = 19 * 1024 * 1024;
+function checkGeminiSize(blocks) {
+  const total = blocks.reduce((n, b) => n + (b.source?.data?.length || b.text?.length || 0), 0);
+  if (total > GEMINI_MAX_INLINE) throw new ContentTooLargeError('Gli appunti allegati sono troppo grandi per l\'AI gratuita (massimo circa 14 MB).');
+}
 
 // In caso di rifiuto da parte dei filtri di sicurezza, l'API riprova automaticamente
 // con il modello di riserva consigliato.
@@ -47,9 +57,34 @@ const QUIZ_SCHEMA = {
   additionalProperties: false,
 };
 
+// Stesso schema nel formato richiesto da Gemini (tipi in maiuscolo, senza additionalProperties).
+const GEMINI_QUIZ_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    title: { type: 'STRING' },
+    description: { type: 'STRING' },
+    questions: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          question: { type: 'STRING' },
+          options: { type: 'ARRAY', items: { type: 'STRING' } },
+          correct_index: { type: 'INTEGER' },
+          explanation: { type: 'STRING' },
+        },
+        required: ['question', 'options', 'correct_index', 'explanation'],
+        propertyOrdering: ['question', 'options', 'correct_index', 'explanation'],
+      },
+    },
+  },
+  required: ['title', 'description', 'questions'],
+  propertyOrdering: ['title', 'description', 'questions'],
+};
+
 function ensureAvailable(req, res) {
-  if (!client) {
-    res.status(503).json({ error: 'Assistente AI non configurato: il proprietario deve impostare ANTHROPIC_API_KEY.' });
+  if (!config.aiEnabled) {
+    res.status(503).json({ error: 'Assistente AI non configurato: il proprietario deve impostare GEMINI_API_KEY.' });
     return false;
   }
   if (!hasRole(req.user, 'owner')) {
@@ -83,6 +118,14 @@ function describeContext({ subjectId, topicId }) {
 
 function apiErrorMessage(err) {
   if (err instanceof ContentTooLargeError) return { status: 413, message: err.message };
+  if (err instanceof gemini.GeminiError) {
+    if (err.status === 429) return { status: 429, message: 'Raggiunto il limite gratuito dell\'AI: riprova tra un minuto (o domani, se è finito quello giornaliero).' };
+    if (err.status === 401 || err.status === 403) return { status: 502, message: 'Chiave Gemini non valida.' };
+    if (err.status === 422) return { status: 422, message: 'L\'AI non può rispondere a questa richiesta.' };
+    if (err.status === 413) return { status: 422, message: 'Risposta troppo lunga: riduci il numero di domande.' };
+    if (err.status === 400) return { status: 400, message: 'Richiesta non accettata dall\'AI (forse il file allegato non è supportato).' };
+    return { status: 502, message: 'Errore temporaneo del servizio AI.' };
+  }
   if (err instanceof Anthropic.AuthenticationError) return { status: 502, message: 'Chiave API dell\'AI non valida.' };
   if (err instanceof Anthropic.RateLimitError) return { status: 429, message: 'L\'AI è sovraccarica, riprova tra poco.' };
   if (err instanceof Anthropic.BadRequestError) return { status: 400, message: 'Richiesta non accettata dall\'AI (forse il file allegato non è supportato).' };
@@ -114,8 +157,29 @@ router.post('/chat', async (req, res) => {
     if (noteId) {
       const note = getNote(noteId);
       if (note) {
+        await ensureLocalFile(note);
         messages[0] = { role: 'user', content: [...noteToBlocks(note), { type: 'text', text: messages[0].content }] };
       }
+    }
+
+    if (useGemini) {
+      if (noteId) checkGeminiSize(messages[0].content);
+      const controller = new AbortController();
+      res.on('close', () => { if (!res.writableFinished) controller.abort(); });
+      let started = false;
+      const start = () => {
+        if (started) return;
+        started = true;
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' });
+      };
+      logRequest(req.user.id, 'chat');
+      const { finishReason } = await gemini.streamChat({
+        system, messages, signal: controller.signal, onText: (t) => { start(); res.write(t); },
+      });
+      start();
+      if (finishReason === 'SAFETY' || finishReason === 'PROHIBITED_CONTENT') res.write('\n\n_L\'assistente non può rispondere a questa richiesta._');
+      else if (finishReason === 'MAX_TOKENS') res.write('\n\n_(risposta interrotta perché troppo lunga)_');
+      return res.end();
     }
 
     const stream = client.beta.messages.stream({
@@ -140,7 +204,7 @@ router.post('/chat', async (req, res) => {
     else if (final.stop_reason === 'max_tokens') res.write('\n\n_(risposta interrotta perché troppo lunga)_');
     res.end();
   } catch (err) {
-    if (err instanceof Anthropic.APIUserAbortError) {
+    if (err instanceof Anthropic.APIUserAbortError || err?.name === 'AbortError') {
       if (!res.writableEnded) res.end();
       return;
     }
@@ -152,15 +216,16 @@ router.post('/chat', async (req, res) => {
 });
 
 /** Collezione degli appunti di un argomento leggibili dall'AI, entro un budget di dimensione. */
-function topicMaterial(topicId) {
+async function topicMaterial(topicId) {
   const notes = db.prepare(`SELECT n.*, u.name AS author_name FROM notes n LEFT JOIN users u ON u.id = n.user_id
                             WHERE n.topic_id = ? ORDER BY n.created_at DESC`).all(topicId);
   const blocks = [];
-  let budget = 24 * 1024 * 1024;
+  let budget = (useGemini ? 13 : 24) * 1024 * 1024;
   let docs = 0;
   for (const note of notes) {
     if (note.size > budget || docs >= 8) continue;
     try {
+      await ensureLocalFile(note);
       const nb = noteToBlocks(note);
       if (nb.length === 1 && /non leggibile|non disponibile/.test(nb[0].text)) continue;
       blocks.push(...nb);
@@ -188,13 +253,14 @@ router.post('/quiz', async (req, res) => {
       const note = getNote(noteId);
       if (!note) return res.status(404).json({ error: 'Appunto non trovato.' });
       topicId = note.topic_id;
+      await ensureLocalFile(note);
       material = noteToBlocks(note);
     }
     const topic = topicId
       ? db.prepare('SELECT t.id, t.name, t.subject_id, s.name AS subject FROM topics t JOIN subjects s ON s.id = t.subject_id WHERE t.id = ?').get(topicId)
       : null;
     if (!topic) return res.status(400).json({ error: 'Seleziona un argomento o un appunto.' });
-    if (!noteId) material = topicMaterial(topic.id);
+    if (!noteId) material = await topicMaterial(topic.id);
 
     const request = `Crea un quiz di verifica a scelta multipla in italiano per la materia "${topic.subject}", argomento "${topic.name}".
 - Numero di domande: ${count}
@@ -204,18 +270,25 @@ router.post('/quiz', async (req, res) => {
 ${material.length ? '- Basa le domande sugli appunti allegati.' : '- Non ci sono appunti leggibili: usa le tue conoscenze sull\'argomento.'}
 ${instructions ? `Indicazioni aggiuntive dello studente: ${instructions}` : ''}`;
 
-    const response = await client.beta.messages.create({
-      model: config.aiModel,
-      max_tokens: 16000,
-      messages: [{ role: 'user', content: [...material, { type: 'text', text: request }] }],
-      output_config: { effort: 'medium', format: { type: 'json_schema', schema: QUIZ_SCHEMA } },
-      ...FALLBACK,
-    });
-    logRequest(req.user.id, 'quiz');
-    if (response.stop_reason === 'refusal') return res.status(422).json({ error: 'L\'AI non ha potuto generare questo quiz.' });
-    if (response.stop_reason === 'max_tokens') return res.status(422).json({ error: 'Quiz troppo lungo: riduci il numero di domande.' });
-    const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-    const data = JSON.parse(text);
+    const content = [...material, { type: 'text', text: request }];
+    let data;
+    if (useGemini) {
+      checkGeminiSize(content);
+      logRequest(req.user.id, 'quiz');
+      data = await gemini.generateJson({ messages: [{ role: 'user', content }], schema: GEMINI_QUIZ_SCHEMA });
+    } else {
+      const response = await client.beta.messages.create({
+        model: config.aiModel,
+        max_tokens: 16000,
+        messages: [{ role: 'user', content }],
+        output_config: { effort: 'medium', format: { type: 'json_schema', schema: QUIZ_SCHEMA } },
+        ...FALLBACK,
+      });
+      logRequest(req.user.id, 'quiz');
+      if (response.stop_reason === 'refusal') return res.status(422).json({ error: 'L\'AI non ha potuto generare questo quiz.' });
+      if (response.stop_reason === 'max_tokens') return res.status(422).json({ error: 'Quiz troppo lungo: riduci il numero di domande.' });
+      data = JSON.parse(response.content.filter((b) => b.type === 'text').map((b) => b.text).join(''));
+    }
     res.json({
       quiz: {
         title: String(data.title || `Quiz: ${topic.name}`).slice(0, 150),

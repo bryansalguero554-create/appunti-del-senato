@@ -122,9 +122,9 @@ export async function renderNote(app, { params: [id] }) {
         <div class="actions">
           <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}" target="_blank" rel="noopener">↗️ Apri in una nuova scheda</a>
           <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}?download=1">⬇️ Scarica</a>
-          <button class="btn" id="ai-explain">🤖 Spiegami questo appunto</button>
+          ${state.site.aiEnabled ? `<button class="btn" id="ai-explain">🤖 Spiegami questo appunto</button>
           <button class="btn" id="ai-ask">💬 Ho un dubbio</button>
-          ${state.site.aiEnabled ? `<a class="btn" href="#/quiz/nuovo?appunto=${note.id}&ai=1">✨ Genera quiz da questo appunto</a>` : ''}
+          <a class="btn" href="#/quiz/nuovo?appunto=${note.id}&ai=1">✨ Genera quiz da questo appunto</a>` : ''}
           ${note.canManage ? '<button class="btn" id="edit-note">✏️ Modifica</button><button class="btn btn-danger" id="delete-note">🗑️ Elimina</button>' : ''}
         </div>
       </aside>
@@ -132,8 +132,8 @@ export async function renderNote(app, { params: [id] }) {
 
   renderViewer(app.querySelector('#viewer'), note);
 
-  app.querySelector('#ai-explain').addEventListener('click', () => openAi('Spiegami in modo semplice e ordinato i concetti principali di questo appunto, poi fammi un breve riassunto finale.'));
-  app.querySelector('#ai-ask').addEventListener('click', () => openAi());
+  app.querySelector('#ai-explain')?.addEventListener('click', () => openAi('Spiegami in modo semplice e ordinato i concetti principali di questo appunto, poi fammi un breve riassunto finale.'));
+  app.querySelector('#ai-ask')?.addEventListener('click', () => openAi());
   app.querySelector('#edit-note')?.addEventListener('click', () => {
     openModal('Modifica appunto', `
       <form>

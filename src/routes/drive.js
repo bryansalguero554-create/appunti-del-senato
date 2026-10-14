@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
-import { setSetting } from '../db.js';
+import { getSetting, setSetting } from '../db.js';
+import { backupNow } from '../backup.js';
 import { requireRole } from '../auth.js';
 import * as drive from '../drive.js';
 import { syncNow, driveStatus, unlinkAll } from '../sync.js';
@@ -14,6 +15,15 @@ const pendingStates = new Map(); // state OAuth → { sessionId, expires }
 adminDrive.use(requireRole('owner'));
 
 adminDrive.get('/', (req, res) => res.json(driveStatus()));
+
+// Il proprietario lo copia in DRIVE_REFRESH_TOKEN sul server, così il collegamento sopravvive ai riavvii.
+adminDrive.get('/token', (req, res) => res.json({ token: getSetting('drive_refresh_token') || '' }));
+
+adminDrive.post('/backup', async (req, res) => {
+  const ok = await backupNow();
+  if (!ok) return res.status(502).json({ error: driveStatus().lastError || 'Backup non riuscito.' });
+  res.json({ ok: true, status: driveStatus() });
+});
 
 adminDrive.get('/connect', (req, res) => {
   if (!drive.driveConfigured()) {
@@ -77,6 +87,7 @@ driveCallback.get('/callback', async (req, res) => {
   if (req.query.error) return back('Accesso a Google Drive negato.');
   try {
     await drive.exchangeCode(req, String(req.query.code || ''));
+    backupNow();
     back('ok');
   } catch (err) {
     back(err.message);

@@ -78,7 +78,7 @@ async function overview(body) {
         ? `<ol style="padding-left:1.2rem;margin:0">${s.topContributors.map((c) => `<li>${esc(c.name)} – <strong>${c.n}</strong> appunti</li>`).join('')}</ol>`
         : '<p class="muted">Nessun appunto ancora.</p>'}</div>
     </div>
-    ${s.aiEnabled ? '' : '<div class="card section"><strong>🤖 Assistente AI disattivato.</strong> <span class="muted">Aggiungi <code>ANTHROPIC_API_KEY</code> nel file <code>.env</code> e riavvia il server per attivarlo.</span></div>'}`;
+    ${s.aiEnabled ? '' : '<div class="card section"><strong>🤖 Assistente AI disattivato.</strong> <span class="muted">Aggiungi la chiave gratuita <code>GEMINI_API_KEY</code> (da aistudio.google.com) nelle impostazioni del server per attivarlo.</span></div>'}`;
 }
 
 // ---------- Online ora (aggiornamento automatico) ----------
@@ -348,8 +348,62 @@ async function drive(body, query) {
       ${r ? `<p class="small muted" style="margin-top:12px">Ultimo risultato: ${r.subjects} materie, ${r.topics} argomenti e ${r.notes} appunti nuovi · ${r.updated} aggiornati · ${r.removed} rimossi · ${r.pushed} inviati al Drive${r.skipped ? ` · ${r.skipped} file saltati (non supportati o troppo grandi)` : ''}.</p>
         ${(r.warnings || []).map((w) => `<p class="small" style="color:var(--gold)">⚠️ ${esc(w)}</p>`).join('')}` : ''}` : ''}
       ${st.lastError ? `<p class="small" style="color:var(--danger);margin-top:12px">Ultimo errore: ${esc(st.lastError)}</p>` : ''}
-    </div>`;
+    </div>
 
+    ${st.connected ? `
+    <div class="card section" style="max-width:760px">
+      <h2>🗄️ Database salvato nel Drive</h2>
+      <p class="muted">Utenti, quiz e impostazioni vengono copiati nella cartella <strong>"Appunti del Senato – dati del sito (non toccare)"</strong> del tuo Drive
+        pochi secondi dopo ogni modifica, e ripristinati da lì quando il server si riavvia. Così il sito funziona anche su un hosting gratuito senza disco.</p>
+      ${st.backupBlocked ? `<p class="small" style="color:var(--danger)">⚠️ All'avvio non è stato possibile recuperare la copia dal Drive (${esc(st.backupBlocked)}): i backup sono sospesi per non sovrascriverla. Controlla il collegamento e riavvia il server.</p>` : ''}
+      <div class="row">
+        <button class="btn" id="backup-now" ${st.backupBlocked ? 'disabled' : ''}>💾 Salva ora</button>
+        <span class="muted small">${st.lastBackup ? `Ultima copia ${timeAgo(st.lastBackup)}` : 'Nessuna copia ancora'}</span>
+      </div>
+      ${st.tokenInEnv ? '<p class="small" style="color:var(--success);margin-top:14px">✅ Il collegamento al Drive è salvato anche sul server: sopravvive ai riavvii.</p>' : `
+      <div class="explanation" style="margin-top:16px">
+        <strong>Ultimo passaggio (una volta sola):</strong> su un server gratuito, a ogni riavvio il sito deve sapere come ricollegarsi al tuo Drive.
+        Copia il codice qui sotto e incollalo su Render in <strong>Environment → DRIVE_REFRESH_TOKEN</strong>, poi salva.
+        <div class="row" style="margin-top:10px;flex-wrap:nowrap">
+          <input id="token-field" type="password" readonly value="" placeholder="••••••••••••">
+          <button class="btn btn-sm" id="token-show" type="button">Mostra</button>
+          <button class="btn btn-sm btn-primary" id="token-copy" type="button">Copia</button>
+        </div>
+        <p class="small muted" style="margin:8px 0 0">È una chiave di accesso al tuo Drive: non condividerla con nessuno.</p>
+      </div>`}
+    </div>` : ''}`;
+
+  const loadToken = async () => {
+    const field = body.querySelector('#token-field');
+    if (!field.value) field.value = (await api('/admin/drive/token')).token;
+    return field;
+  };
+  body.querySelector('#token-show')?.addEventListener('click', async (e) => {
+    const field = await loadToken();
+    field.type = field.type === 'password' ? 'text' : 'password';
+    e.target.textContent = field.type === 'password' ? 'Mostra' : 'Nascondi';
+  });
+  body.querySelector('#token-copy')?.addEventListener('click', async () => {
+    const field = await loadToken();
+    try {
+      await navigator.clipboard.writeText(field.value);
+      toast('Codice copiato');
+    } catch {
+      field.type = 'text';
+      field.select();
+      toast('Seleziona e copia il codice');
+    }
+  });
+  body.querySelector('#backup-now')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      await api('/admin/drive/backup', { method: 'POST' });
+      toast('Database salvato nel Drive');
+    } catch (err) {
+      toastError(err);
+    }
+    drive(body);
+  });
   body.querySelector('#drive-connect')?.addEventListener('click', async () => {
     try {
       const { url } = await api('/admin/drive/connect');
@@ -400,7 +454,7 @@ async function drive(body, query) {
     drive(body);
   });
   body.querySelector('#drive-disconnect')?.addEventListener('click', async () => {
-    if (!(await confirmDialog('Scollegare Google Drive? Materie e appunti restano sul sito, ma non saranno più sincronizzati.', { confirmLabel: 'Scollega' }))) return;
+    if (!(await confirmDialog('Scollegare Google Drive? Materie e appunti restano nel Drive, ma il sito smetterà di sincronizzarli e di salvare il database. Se hai impostato DRIVE_REFRESH_TOKEN sul server, toglilo anche da lì.', { confirmLabel: 'Scollega' }))) return;
     await api('/admin/drive/disconnect', { method: 'POST' });
     toast('Google Drive scollegato');
     drive(body);
@@ -423,7 +477,7 @@ async function settings(body) {
     </div>
     <div class="card section" style="max-width:640px">
       <h3>🤖 Assistente AI</h3>
-      <p>${state.site.aiEnabled ? '✅ Attivo.' : '❌ Non configurato.'} <span class="muted">La chiave si imposta nel file <code>.env</code> del server (<code>ANTHROPIC_API_KEY</code>), insieme al limite giornaliero di richieste per utente (<code>AI_DAILY_LIMIT</code>).</span></p>
+      <p>${state.site.aiEnabled ? '✅ Attivo.' : '❌ Non configurato.'} <span class="muted">Usa Google Gemini con la chiave gratuita <code>GEMINI_API_KEY</code> (in alternativa Claude con <code>ANTHROPIC_API_KEY</code>). Il limite giornaliero per utente si imposta con <code>AI_DAILY_LIMIT</code>.</span></p>
     </div>`;
 
   body.querySelector('#settings-form').addEventListener('submit', async (e) => {

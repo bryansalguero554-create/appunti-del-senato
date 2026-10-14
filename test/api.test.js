@@ -35,7 +35,7 @@ before(async () => {
   server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server.js'], {
     env: {
       ...process.env, PORT: String(PORT), DATA_DIR: path.join(tmp, 'data'), UPLOAD_DIR: path.join(tmp, 'up'),
-      OWNER_EMAIL: OWNER.email, OWNER_PASSWORD: OWNER.password, ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '',
+      OWNER_EMAIL: OWNER.email, OWNER_PASSWORD: OWNER.password, ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', GEMINI_API_KEY: '',
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   });

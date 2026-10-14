@@ -25,7 +25,12 @@ export const config = {
   ownerPassword: env.OWNER_PASSWORD || '',
   ownerName: env.OWNER_NAME || 'Proprietario',
   aiModel: env.AI_MODEL || 'claude-opus-5-5',
-  aiEnabled: Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN),
+  geminiApiKey: env.GEMINI_API_KEY || '',
+  geminiModel: env.GEMINI_MODEL || '',
+  geminiApiBase: (env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com').replace(/\/+$/, ''),
+  // Gemini (chiave gratuita) ha la precedenza; altrimenti Claude se è presente la sua chiave
+  aiProvider: env.GEMINI_API_KEY ? 'gemini' : (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) ? 'anthropic' : null,
+  get aiEnabled() { return Boolean(this.aiProvider); },
   aiDailyLimit: Number(env.AI_DAILY_LIMIT) || 100,
   seedDefaultSubjects: env.SEED_DEFAULT_SUBJECTS !== 'false',
   publicUrl: (env.PUBLIC_URL || '').replace(/\/+$/, ''),

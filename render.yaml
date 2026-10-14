@@ -1,24 +1,18 @@
 # Configurazione per Render (https://render.com): Dashboard → New → Blueprint → scegli questo repository.
+# Piano GRATUITO: il disco del server si azzera a ogni riavvio, quindi il sito usa Google Drive
+# come cloud principale (appunti nel Drive, database salvato e ripristinato dal Drive).
 services:
   - type: web
     name: appunti-del-senato
     runtime: node
-    plan: starter          # serve un piano a pagamento per avere il disco persistente
+    plan: free
     region: frankfurt
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /api/health
-    disk:
-      name: dati
-      mountPath: /data
-      sizeGB: 5
     envVars:
       - key: NODE_VERSION
         value: "22"
-      - key: DATA_DIR
-        value: /data/db
-      - key: UPLOAD_DIR
-        value: /data/uploads
       - key: COOKIE_SECURE
         value: "true"
       - key: TRUST_PROXY
@@ -27,14 +21,17 @@ services:
         value: bryansalguero26@icloud.com
       - key: OWNER_NAME
         value: Bryan
-      # I valori segreti si inseriscono a mano nella dashboard di Render (non vanno mai nel repository)
+      - key: MAX_UPLOAD_MB
+        value: "100"
+      # Valori segreti: si inseriscono a mano nella dashboard di Render (mai nel repository)
       - key: OWNER_PASSWORD
-        sync: false
-      - key: ANTHROPIC_API_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: PUBLIC_URL
+      - key: DRIVE_REFRESH_TOKEN
+        sync: false
+      # Assistente AI gratuito: chiave Gemini da https://aistudio.google.com (lasciala vuota per tenere l'AI spenta)
+      - key: GEMINI_API_KEY
         sync: false

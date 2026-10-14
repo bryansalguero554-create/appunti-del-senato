@@ -7,7 +7,7 @@ import { db, transaction } from '../db.js';
 import { config } from '../config.js';
 import { requireAuth, requireRole, canManage } from '../auth.js';
 import { extOf, mimeFor, servingPolicy, contentDisposition } from '../files.js';
-import { pushSubject, pushTopic, pushNotes, pushRename, pushTrash } from '../sync.js';
+import { pushSubject, pushTopic, pushNotes, pushRename, pushTrash, ensureLocalFile } from '../sync.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -245,11 +245,11 @@ router.get('/notes/:id', (req, res) => {
 });
 
 // Il nome del file nell'URL è facoltativo: serve solo a mostrare un titolo sensato nel visualizzatore PDF.
-router.get('/notes/:id/file{/:name}', (req, res) => {
+router.get('/notes/:id/file{/:name}', async (req, res) => {
   const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(id(req.params.id));
   if (!note) return notFound(res, 'Appunto');
-  const filePath = path.join(config.uploadDir, path.basename(note.stored_name));
-  if (!fs.existsSync(filePath)) return notFound(res, 'File');
+  const filePath = await ensureLocalFile(note);
+  if (!filePath) return notFound(res, 'File');
 
   const policy = servingPolicy(note.mime);
   const download = req.query.download === '1' || policy === 'attachment';
