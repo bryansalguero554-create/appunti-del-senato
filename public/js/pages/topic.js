@@ -4,6 +4,7 @@ import {
 } from '../util.js';
 import { topicForm } from './subject.js';
 import { openAi } from '../ai.js';
+import { openQuizGenerator } from '../quizgen.js';
 
 /** Disegna l'anteprima della prima pagina dei PDF quando la card diventa visibile. */
 const pdfObserver = 'IntersectionObserver' in window ? new IntersectionObserver((entries) => {
@@ -111,8 +112,7 @@ export async function renderTopic(app, { params: [id] }) {
       <div class="section-head">
         <h2>Quiz di verifica</h2>
         <span class="spacer"></span>
-        ${state.site.aiEnabled ? `<a class="btn btn-sm" href="#/quiz/nuovo?argomento=${topic.id}&ai=1">✨ Genera con AI</a>` : ''}
-        <a class="btn btn-sm" href="#/quiz/nuovo?argomento=${topic.id}">＋ Crea quiz</a>
+        <button class="btn btn-sm btn-primary" id="gen-quiz">✨ Genera quiz con AI</button>
       </div>
       ${quizzes.length ? `<div class="list">${quizzes.map((q) => `
         <a class="list-item" href="#/quiz/${q.id}">
@@ -120,7 +120,7 @@ export async function renderTopic(app, { params: [id] }) {
           <div class="grow"><div class="title">${esc(q.title)}</div>
             <div class="muted small">${q.question_count} domande · di ${esc(q.author_name || '—')} · ${timeAgo(q.created_at)}</div></div>
           ${q.ai_generated ? '<span class="badge badge-ai">AI</span>' : ''}
-        </a>`).join('')}</div>` : '<p class="muted">Nessun quiz per questo argomento: creane uno per verificare la tua preparazione.</p>'}
+        </a>`).join('')}</div>` : '<p class="muted">Nessun quiz per questo argomento: fattene preparare uno dall\'AI sui tuoi appunti.</p>'}
     </div>`;
 
   const grid = app.querySelector('#notes-grid');
@@ -217,6 +217,7 @@ export async function renderTopic(app, { params: [id] }) {
   });
 
   app.querySelector('#ask-ai')?.addEventListener('click', () => openAi());
+  app.querySelector('#gen-quiz').addEventListener('click', () => openQuizGenerator({ subjectId: subject.id, topicId: topic.id }));
   app.querySelector('#edit-topic')?.addEventListener('click', () => {
     openModal('Modifica argomento', topicForm(topic), async (fd) => {
       await api(`/topics/${topic.id}`, { method: 'PATCH', body: Object.fromEntries(fd) });

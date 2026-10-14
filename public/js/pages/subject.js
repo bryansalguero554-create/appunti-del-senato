@@ -2,6 +2,7 @@ import {
   api, esc, timeAgo, fileType, emptyState, isModerator, openModal, confirmDialog, toast, setAiContext,
 } from '../util.js';
 import { subjectForm } from './home.js';
+import { openQuizGenerator } from '../quizgen.js';
 
 export function topicForm(topic = {}) {
   return `
@@ -49,7 +50,7 @@ export async function renderSubject(app, { params: [id] }) {
       <div class="section-head">
         <h2>Quiz di ${esc(subject.name)}</h2>
         <span class="spacer"></span>
-        <a class="btn btn-sm" href="#/quiz/nuovo?materia=${subject.id}">＋ Crea quiz</a>
+        <button class="btn btn-sm btn-primary" id="gen-quiz">✨ Genera quiz con AI</button>
       </div>
       ${quizzes.length ? `<div class="list">${quizzes.map((q) => `
         <a class="list-item" href="#/quiz/${q.id}">
@@ -57,9 +58,10 @@ export async function renderSubject(app, { params: [id] }) {
           <div class="grow"><div class="title">${esc(q.title)}</div>
             <div class="muted small">${q.question_count} domande · di ${esc(q.author_name || '—')}</div></div>
           ${q.ai_generated ? '<span class="badge badge-ai">AI</span>' : ''}
-        </a>`).join('')}</div>` : '<p class="muted">Ancora nessun quiz per questa materia.</p>'}
+        </a>`).join('')}</div>` : '<p class="muted">Ancora nessun quiz per questa materia: generane uno con l\'AI.</p>'}
     </div>`;
 
+  app.querySelector('#gen-quiz').addEventListener('click', () => openQuizGenerator({ subjectId: subject.id }));
   app.querySelector('#new-topic').addEventListener('click', () => {
     openModal('Nuovo argomento', topicForm(), async (fd) => {
       const { topic } = await api(`/subjects/${subject.id}/topics`, { method: 'POST', body: Object.fromEntries(fd) });

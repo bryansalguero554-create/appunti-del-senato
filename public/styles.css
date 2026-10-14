@@ -576,3 +576,30 @@ table.data select { width: auto; padding: 5px 10px; font-size: .85rem; }
   .tilt { transform: none !important; }
   .hero-title .word { opacity: 1; transform: none; }
 }
+
+/* ---------- Generatore di quiz ---------- */
+.seg { display: flex; gap: 4px; padding: 4px; background: var(--surface-2); border-radius: 12px; }
+.seg label { flex: 1; margin: 0; cursor: pointer; position: relative; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: block; text-align: center; padding: 8px 6px; border-radius: 9px; font-size: .9rem; font-weight: 500; color: var(--text); transition: background .25s, box-shadow .25s, transform .3s var(--spring); }
+.seg input:checked + span { background: var(--surface); box-shadow: 0 1px 4px rgb(0 0 0 / .12); }
+.seg input:focus-visible + span { outline: 2px solid var(--primary); }
+.qg-loading { text-align: center; padding: 18px 0 6px; animation: drop-in .4s var(--ease); }
+.qg-loading p { margin: 10px 0 0; }
+.qg-orb { width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; background: conic-gradient(from 0deg, #0071e3, #bf5af2, #ff375f, #ff9f0a, #0071e3); animation: spin 1.6s linear infinite; box-shadow: 0 0 30px rgb(191 90 242 / .45); -webkit-mask: radial-gradient(farthest-side, transparent 55%, #000 57%); mask: radial-gradient(farthest-side, transparent 55%, #000 57%); }
+
+/* ---------- Visualizzatore a schermo intero (anche su iPhone/iPad) ---------- */
+.viewer.is-full { position: fixed; inset: 0; z-index: 90; border-radius: 0; min-height: 0; display: flex; flex-direction: column; animation: fade-in .25s ease; padding-top: env(safe-area-inset-top); }
+.viewer.is-full > iframe, .viewer.is-full > .doc, .viewer.is-full > pre { flex: 1; height: auto; max-height: none; }
+.viewer.is-full > img { max-height: 100vh; margin: auto; }
+.viewer-close { position: fixed; top: calc(12px + env(safe-area-inset-top)); right: 12px; z-index: 91; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgb(0 0 0 / .65); color: #fff; font-size: 1.1rem; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+body.no-scroll { overflow: hidden; }
+@media (max-width: 600px) {
+  .viewer iframe { height: 72vh; }
+  .viewer .doc { padding: 20px 18px; }
+  .side-card { position: static; }
+  .modal { border-radius: 22px 22px 0 0; align-self: end; max-height: 92vh; }
+  .modal-backdrop { padding: 0; place-items: end center; }
+}
+/* Su iPhone/iPad i campi sotto i 16px fanno ingrandire la pagina quando li tocchi */
+@media (max-width: 1024px) and (pointer: coarse) { input, select, textarea { font-size: 16px !important; } }

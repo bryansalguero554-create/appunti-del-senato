@@ -117,7 +117,10 @@ test('caricamento appunti in più formati e politiche di visualizzazione', async
 });
 
 test('quiz: soluzioni nascoste e correzione lato server', async () => {
-  let r = await alice.post('/api/quizzes', {
+  // i quiz si generano con l'AI; la creazione manuale è riservata a proprietario e moderatori
+  const denied = await alice.post('/api/quizzes', { title: 'x', topic_id: topicId, questions: [{ question: 'q', options: ['a', 'b'], correct_index: 0 }] });
+  assert.equal(denied.status, 403);
+  let r = await owner.post('/api/quizzes', {
     title: 'Verifica', topic_id: topicId,
     questions: [
       { question: '1+1?', options: ['1', '2', '3'], correct_index: 1, explanation: 'Somma' },
