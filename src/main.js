@@ -1,8 +1,9 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
 import { config } from './config.js';
-import './db.js';
+import { getSetting } from './db.js';
 import { loadSession, checkOrigin, ensureOwner, clientIp, parseCookies } from './auth.js';
 import { ping, leave } from './presence.js';
 import authRoutes from './routes/auth.js';
@@ -89,6 +90,23 @@ app.get('/vendor/:file', (req, res, next) => {
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.sendFile(path.join(config.root, 'node_modules', rel));
 });
+
+// Pagine pubbliche richieste da Google per il collegamento al Drive (privacy e termini di servizio).
+const legalPages = { '/privacy': ['privacy.html', 'Informativa sulla privacy'], '/termini': ['termini.html', 'Termini di servizio'] };
+app.get(Object.keys(legalPages), (req, res) => {
+  const [file, title] = legalPages[req.path];
+  const read = (name) => fs.readFileSync(path.join(config.root, 'public', 'legal', name), 'utf8');
+  const escape = (v) => String(v).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const values = {
+    TITLE: title,
+    SITE_NAME: escape(getSetting('site_name') || 'Appunti del Senato'),
+    CONTACT_EMAIL: escape(config.contactEmail),
+    UPDATED: '14 ottobre 2026',
+  };
+  const html = read('layout.html').replace('{{CONTENT}}', read(file)).replace(/\{\{(\w+)\}\}/g, (m, k) => values[k] ?? m);
+  res.type('html').send(html);
+});
+app.use('/legal', (req, res, next) => res.status(404).sendFile(path.join(config.root, 'public', '404.html')));
 
 app.use(express.static(path.join(config.root, 'public'), { index: 'index.html' }));
 // L'app usa URL con "#": qualsiasi altro percorso non esiste e mostra la pagina 404 personalizzata.
