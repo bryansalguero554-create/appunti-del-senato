@@ -349,22 +349,27 @@ export async function renderNote(app, { params: [id] }) {
   });
 
   // "Schermo intero" fatto in CSS: funziona anche su iPhone, dove l'API Fullscreen non esiste per le pagine.
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'viewer-close';
-  closeBtn.setAttribute('aria-label', 'Esci dallo schermo intero');
-  closeBtn.textContent = '✕';
-  const exitFull = () => {
+  // La barra con la ✕ sta fuori dal riquadro dell'appunto (che viene ridisegnato mentre il file si carica),
+  // così resta sempre visibile sopra a tutto.
+  const fullBar = document.createElement('div');
+  fullBar.className = 'full-bar';
+  fullBar.innerHTML = `<span class="full-title">${esc(note.title)}</span>
+    <button type="button" class="full-close" aria-label="Esci dallo schermo intero">✕</button>`;
+  const onKey = (e) => { if (e.key === 'Escape') exitFull(); };
+  function exitFull() {
     viewer.classList.remove('is-full');
-    document.body.classList.remove('no-scroll');
-    closeBtn.remove();
+    document.body.classList.remove('no-scroll', 'is-fullscreen');
+    fullBar.remove();
     window.removeEventListener('route-change', exitFull);
-  };
-  closeBtn.addEventListener('click', exitFull);
+    document.removeEventListener('keydown', onKey);
+  }
+  fullBar.querySelector('.full-close').addEventListener('click', exitFull);
   app.querySelector('#fullscreen').addEventListener('click', () => {
     viewer.classList.add('is-full');
-    document.body.classList.add('no-scroll');
-    viewer.append(closeBtn);
+    document.body.classList.add('no-scroll', 'is-fullscreen');
+    document.body.append(fullBar);
     window.addEventListener('route-change', exitFull);
+    document.addEventListener('keydown', onKey);
   });
 
   app.querySelector('#ai-explain')?.addEventListener('click', () => openAi('Spiegami in modo semplice e ordinato i concetti principali di questo appunto, poi fammi un breve riassunto finale.'));
