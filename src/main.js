@@ -110,6 +110,16 @@ app.get(Object.keys(legalPages), (req, res) => {
 });
 app.use('/legal', (req, res, next) => res.status(404).sendFile(path.join(config.root, 'public', '404.html')));
 
+// Il service worker non va mai messo in cache dal browser, così gli aggiornamenti arrivano subito.
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(config.root, 'public', 'sw.js'));
+});
+app.get('/manifest.webmanifest', (req, res) => {
+  res.type('application/manifest+json');
+  res.sendFile(path.join(config.root, 'public', 'manifest.webmanifest'));
+});
+
 app.use(express.static(path.join(config.root, 'public'), { index: 'index.html' }));
 // L'app usa URL con "#": qualsiasi altro percorso non esiste e mostra la pagina 404 personalizzata.
 app.use((req, res) => res.status(404).sendFile(path.join(config.root, 'public', '404.html')));

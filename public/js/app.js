@@ -10,6 +10,7 @@ import { renderAdmin } from './pages/admin.js';
 import { initAi } from './ai.js';
 import { renderNotFound } from './pages/notfound.js';
 import { initFx, pageEnter } from './fx.js';
+import { initInstall, maybeShowInstallBanner } from './install.js';
 
 const routes = [
   [/^\/?$/, renderHome, 'home'],
@@ -74,6 +75,7 @@ async function router() {
   }
   if (token === renderToken) pageEnter(app);
   sendPresence();
+  setTimeout(maybeShowInstallBanner, 2500);
 }
 
 function showChrome(visible) {
@@ -201,6 +203,7 @@ window.addEventListener('hashchange', router);
   }
   initAi();
   initFx($('#app'));
+  initInstall();
   router();
 }());
 
