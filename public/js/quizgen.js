@@ -1,5 +1,5 @@
 // Generatore di quiz con l'AI: è l'unico modo per creare un quiz sul sito.
-import { state, api, esc, openModal, closeModal, toast, toastError, isOwner } from './util.js';
+import { state, api, esc, openModal, closeModal, toast, toastError, isOwner, cap } from './util.js';
 
 const HINTS = [
   'Sto leggendo gli appunti…',
@@ -43,7 +43,7 @@ export async function openQuizGenerator({ subjectId = null, topicId = null, note
     <form id="qg-form">
       ${noteId ? `<p class="muted">L'AI preparerà le domande leggendo l'appunto <strong>${esc(noteTitle)}</strong>.</p>` : `
       <div class="field"><label>Materia</label>
-        <select name="subjectId" id="qg-subject">${subjects.map((s) => `<option value="${s.id}" ${s.id === Number(subjectId) ? 'selected' : ''}>${esc(s.icon)} ${esc(s.name)}</option>`).join('')}</select></div>
+        <select name="subjectId" id="qg-subject">${subjects.map((s) => `<option value="${s.id}" ${s.id === Number(subjectId) ? 'selected' : ''}>${esc(s.icon)} ${esc(cap(s.name))}</option>`).join('')}</select></div>
       <div class="field"><label>Argomento</label>
         <select name="topicId" id="qg-topic"><option value="">Tutta la materia</option></select></div>`}
       <div class="field"><label>Numero di domande</label>

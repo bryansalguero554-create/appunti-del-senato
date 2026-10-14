@@ -7,6 +7,8 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
+/** Iniziale maiuscola solo per la visualizzazione (es. cartelle del Drive scritte in minuscolo). */
+export const cap = (s) => { const t = String(s ?? ''); return t.charAt(0).toLocaleUpperCase('it-IT') + t.slice(1); };
 
 export class ApiError extends Error {
   constructor(message, status) {

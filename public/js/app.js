@@ -1,4 +1,4 @@
-import { state, $, $$, api, esc, toast, toastError, closeModal, spinner, setAiContext } from './util.js';
+import { state, $, $$, api, esc, toast, toastError, closeModal, spinner, setAiContext, cap } from './util.js';
 import { renderAuth } from './pages/auth.js';
 import { renderHome } from './pages/home.js';
 import { renderSubject } from './pages/subject.js';
@@ -155,7 +155,7 @@ $('#search-input').addEventListener('input', (e) => {
     try {
       const r = await api(`/search?q=${encodeURIComponent(q)}`);
       const parts = [];
-      if (r.subjects.length) parts.push('<div class="group">Materie</div>', ...r.subjects.map((s) => `<a href="#/materia/${s.id}">${esc(s.icon)} ${esc(s.name)}</a>`));
+      if (r.subjects.length) parts.push('<div class="group">Materie</div>', ...r.subjects.map((s) => `<a href="#/materia/${s.id}">${esc(s.icon)} ${esc(cap(s.name))}</a>`));
       if (r.topics.length) parts.push('<div class="group">Argomenti</div>', ...r.topics.map((t) => `<a href="#/argomento/${t.id}">📁 ${esc(t.name)} <span class="muted small">· ${esc(t.subject_name)}</span></a>`));
       if (r.notes.length) parts.push('<div class="group">Appunti</div>', ...r.notes.map((n) => `<a href="#/appunto/${n.id}">📄 ${esc(n.title)} <span class="muted small">· ${esc(n.subject_name)} › ${esc(n.topic_name)}</span></a>`));
       box.innerHTML = parts.join('') || '<div class="muted small" style="padding:10px">Nessun risultato</div>';

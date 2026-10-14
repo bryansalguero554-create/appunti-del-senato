@@ -27,29 +27,61 @@ const OLD_DESCRIPTIONS = {
   "Storia dell'arte": 'Opere, artisti e movimenti dalla preistoria al contemporaneo.',
 };
 
-function refreshOldDescriptions() {
-  const update = db.prepare("UPDATE subjects SET description = ? WHERE name = ? AND (description = ? OR description = '')");
-  for (const s of DEFAULT_SUBJECTS) {
-    if (OLD_DESCRIPTIONS[s.name] !== undefined) update.run(s.description, s.name, OLD_DESCRIPTIONS[s.name]);
+/** Confronto tollerante dei nomi: maiuscole, accenti, apostrofi "curvi" di iPhone/Drive e spazi. */
+export function normalizeName(name) {
+  return String(name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2018\u2019\u02bc`\u00b4]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+// Nomi alternativi con cui una materia predefinita può comparire (es. una cartella del Drive chiamata "Arte").
+const ALIASES = { arte: "Storia dell'arte", "storia arte": "Storia dell'arte", "scienze umane e sociali": 'Scienze umane' };
+
+export function defaultFor(name) {
+  const n = normalizeName(name);
+  const target = ALIASES[n] ? normalizeName(ALIASES[n]) : n;
+  return DEFAULT_SUBJECTS.find((s) => normalizeName(s.name) === target) || null;
+}
+
+/**
+ * Completa icona, colore e descrizione delle materie che corrispondono a una predefinita
+ * (anche se create da una cartella del Drive o scritte in modo leggermente diverso),
+ * senza toccare quello che il proprietario ha personalizzato.
+ */
+export function applySubjectDefaults() {
+  const rows = db.prepare('SELECT id, name, description, icon, color FROM subjects').all();
+  const update = db.prepare('UPDATE subjects SET description = ?, icon = ?, color = ? WHERE id = ?');
+  for (const row of rows) {
+    const def = defaultFor(row.name);
+    if (!def) continue;
+    const oldDesc = OLD_DESCRIPTIONS[def.name];
+    const description = !row.description || row.description === oldDesc ? def.description : row.description;
+    const icon = !row.icon || row.icon === '📚' ? def.icon : row.icon;
+    const color = !row.color || row.color === '#4f46e5' ? def.color : row.color;
+    if (description !== row.description || icon !== row.icon || color !== row.color) update.run(description, icon, color, row.id);
   }
 }
 
 export function seedDefaultSubjects() {
   if (!config.seedDefaultSubjects) return 0;
-  refreshOldDescriptions();
-  if (getSetting('default_subjects_seeded') === 'true') return 0;
-  const exists = db.prepare('SELECT 1 FROM subjects WHERE name = ? COLLATE NOCASE');
-  const insert = db.prepare('INSERT INTO subjects (name, description, icon, color) VALUES (?, ?, ?, ?)');
-  const created = transaction(() => {
-    let n = 0;
-    for (const s of DEFAULT_SUBJECTS) {
-      if (exists.get(s.name)) continue;
-      insert.run(s.name, s.description, s.icon, s.color);
-      n += 1;
-    }
-    setSetting('default_subjects_seeded', 'true');
-    return n;
-  });
-  if (created) console.log(`📚 Create ${created} materie predefinite.`);
-  return created;
+  if (getSetting('default_subjects_seeded') !== 'true') {
+    const existing = new Set(db.prepare('SELECT name FROM subjects').all().map((r) => normalizeName(defaultFor(r.name)?.name || r.name)));
+    const insert = db.prepare('INSERT INTO subjects (name, description, icon, color) VALUES (?, ?, ?, ?)');
+    const created = transaction(() => {
+      let n = 0;
+      for (const s of DEFAULT_SUBJECTS) {
+        if (existing.has(normalizeName(s.name))) continue;
+        insert.run(s.name, s.description, s.icon, s.color);
+        n += 1;
+      }
+      setSetting('default_subjects_seeded', 'true');
+      return n;
+    });
+    if (created) console.log(`📚 Create ${created} materie predefinite.`);
+  }
+  applySubjectDefaults();
+  return 0;
 }

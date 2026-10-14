@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const requests = [];
+let failModel = null; // modello che risponde "quota esaurita", per provare il passaggio automatico
 const mock = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
@@ -21,6 +22,10 @@ const mock = http.createServer((req, res) => {
         { name: 'models/gemini-3.5-flash-lite', supportedGenerationMethods: ['generateContent'] },
         { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] },
       ] }));
+    }
+    if (failModel && req.url.includes(`models/${failModel}:`)) {
+      res.writeHead(429, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ error: { code: 429, message: 'Quota exceeded for metric generate_content_free_tier_requests, limit: 0', status: 'RESOURCE_EXHAUSTED' } }));
     }
     if (req.url.includes(':streamGenerateContent')) {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -76,7 +81,7 @@ after(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test('la chat usa Gemini con il modello Flash più recente e l\'appunto allegato', async () => {
+test('la chat usa Gemini (modello Flash gratuito) e l\'appunto allegato', async () => {
   const me = await (await call('GET', '/api/auth/me')).json();
   assert.equal(me.site.aiEnabled, true);
   const subjects = await (await call('GET', '/api/subjects')).json();
@@ -93,7 +98,7 @@ test('la chat usa Gemini con il modello Flash più recente e l\'appunto allegato
   assert.equal(await res.text(), 'La Bastiglia fu presa nel 1789.');
 
   const sent = requests.find((r) => r.url.includes(':streamGenerateContent'));
-  assert.match(sent.url, /models\/gemini-3\.5-flash:streamGenerateContent\?alt=sse/);
+  assert.match(sent.url, /models\/gemini-2\.5-flash:streamGenerateContent\?alt=sse/);
   assert.equal(sent.key, 'gem-key');
   assert.match(sent.body.systemInstruction.parts[0].text, /Modulo 1/);
   const parts = sent.body.contents[0].parts;
@@ -130,4 +135,20 @@ test('quiz su tutta la materia, senza scegliere un argomento', async () => {
   assert.equal(saved.quiz.topic_id, null);
   const prompt = requests.filter((r) => r.url.includes(':generateContent') && !r.url.includes('stream')).at(-1).body.contents[0].parts.at(-1).text;
   assert.match(prompt, /tutti gli argomenti/);
+});
+
+test('se un modello ha la quota esaurita si passa da solo a un altro', async () => {
+  failModel = 'gemini-2.5-flash';
+  try {
+    const res = await call('POST', '/api/ai/chat', { messages: [{ role: 'user', content: 'Ciao' }] });
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'La Bastiglia fu presa nel 1789.');
+    const last = requests.filter((r) => r.url.includes(':streamGenerateContent')).at(-1);
+    assert.match(last.url, /gemini-3\.5-flash:/);
+    const test = await (await call('POST', '/api/ai/test')).json();
+    assert.equal(test.ok, true);
+    assert.equal(test.model, 'gemini-3.5-flash');
+  } finally {
+    failModel = null;
+  }
 });

@@ -1,4 +1,4 @@
-import { state, api, esc, timeAgo, fileType, emptyState, isModerator, openModal, toast } from '../util.js';
+import { state, api, esc, timeAgo, fileType, emptyState, isModerator, openModal, toast, cap } from '../util.js';
 
 export function subjectForm(subject = {}) {
   return `
@@ -41,7 +41,7 @@ function subjectTile(s) {
   return `
     <a class="card subject-tile tilt" data-tilt="9" href="#/materia/${s.id}" style="--accent:${esc(s.color)}" data-name="${esc(s.name.toLowerCase())}">
       <div class="subject-icon pop">${esc(s.icon)}</div>
-      <h3 class="pop-sm">${esc(s.name)}</h3>
+      <h3 class="pop-sm">${esc(cap(s.name))}</h3>
       <p class="tile-desc">${esc(s.description || '')}</p>
       <div class="tile-stats"><span>${s.topic_count} argomenti</span><span>·</span><span>${s.note_count} appunti</span></div>
     </a>`;

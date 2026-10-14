@@ -1,6 +1,6 @@
 import {
   state, api, esc, timeAgo, fileType, isImageExt, formatBytes, emptyState, openModal, confirmDialog,
-  toast, toastError, setAiContext, loadPdfJs, isModerator,
+  toast, toastError, setAiContext, loadPdfJs, isModerator, cap,
 } from '../util.js';
 import { topicForm } from './subject.js';
 import { openAi } from '../ai.js';
@@ -63,7 +63,7 @@ export async function renderTopic(app, { params: [id] }) {
   app.innerHTML = `
     <div class="page-head">
       <div class="titles">
-        <div class="breadcrumb"><a href="#/">Materie</a> › <a href="#/materia/${subject.id}">${esc(subject.icon)} ${esc(subject.name)}</a> ›</div>
+        <div class="breadcrumb"><a href="#/">Materie</a> › <a href="#/materia/${subject.id}">${esc(subject.icon)} ${esc(cap(subject.name))}</a> ›</div>
         <h1>📁 ${esc(topic.name)}</h1>
         ${topic.description ? `<p class="muted">${esc(topic.description)}</p>` : ''}
         <p class="muted small">Creato da ${esc(topic.author_name || '—')} · ${notes.length} appunti</p>

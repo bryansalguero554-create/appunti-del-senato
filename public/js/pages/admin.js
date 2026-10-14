@@ -496,9 +496,28 @@ async function settings(body) {
     </div>
     <div class="card section" style="max-width:640px">
       <h3>🤖 Assistente AI</h3>
-      <p>${state.site.aiEnabled ? '✅ Attivo.' : '❌ Non configurato.'} <span class="muted">Usa Google Gemini con la chiave gratuita <code>GEMINI_API_KEY</code> (in alternativa Claude con <code>ANTHROPIC_API_KEY</code>). Il limite giornaliero per utente si imposta con <code>AI_DAILY_LIMIT</code>.</span></p>
-    </div>`;
+      <p>${state.site.aiEnabled ? '✅ Chiave presente.' : '❌ Nessuna chiave.'} <span class="muted">Usa Google Gemini con la chiave gratuita <code>GEMINI_API_KEY</code> (in alternativa Claude con <code>ANTHROPIC_API_KEY</code>). Il limite giornaliero per utente si imposta con <code>AI_DAILY_LIMIT</code>.</span></p>
+      <div class="row"><button class="btn btn-primary" id="ai-test" type="button" ${state.site.aiEnabled ? '' : 'disabled'}>🧪 Prova l'AI</button><span class="muted small" id="ai-test-out"></span></div>
+      <div id="ai-test-result" style="margin-top:12px"></div>
+    </div>
+    <p class="muted small section">Versione del sito online: <code id="site-version">…</code></p>`;
 
+  fetch('/api/health').then((r) => r.json()).then((h) => { body.querySelector('#site-version').textContent = h.version; }).catch(() => {});
+  body.querySelector('#ai-test')?.addEventListener('click', async (e) => {
+    const out = body.querySelector('#ai-test-result');
+    e.target.disabled = true;
+    out.innerHTML = '<p class="muted small">Sto contattando l\'AI…</p>';
+    try {
+      const r = await api('/ai/test', { method: 'POST' });
+      out.innerHTML = r.ok
+        ? `<div class="explanation">✅ <strong>Funziona!</strong> ${esc(r.provider)} ha risposto con il modello <code>${esc(r.model)}</code>: "${esc(r.reply)}"</div>`
+        : `<div class="explanation" style="color:var(--danger)">❌ <strong>Non funziona.</strong> ${esc(r.error)}</div><p class="muted small">Fai uno screenshot di questo messaggio e mandalo a chi ti aiuta con il sito.</p>`;
+    } catch (err) {
+      out.innerHTML = `<div class="explanation" style="color:var(--danger)">❌ ${esc(err.message)}</div>`;
+    } finally {
+      e.target.disabled = false;
+    }
+  });
   body.querySelector('#settings-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);

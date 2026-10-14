@@ -39,7 +39,8 @@ app.use('/api', (req, res, next) => {
 app.use(checkOrigin);
 app.use(loadSession);
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+// version: il commit pubblicato (Render lo fornisce in RENDER_GIT_COMMIT), utile per sapere se un aggiornamento è online
+app.get('/api/health', (req, res) => res.json({ ok: true, version: (process.env.RENDER_GIT_COMMIT || 'locale').slice(0, 7) }));
 
 // Presenza in tempo reale: ogni pagina aperta invia un ping periodico.
 app.post('/api/presence', (req, res) => {

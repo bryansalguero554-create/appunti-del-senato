@@ -118,22 +118,50 @@ function describeContext({ subjectId, topicId }) {
   return '';
 }
 
-function apiErrorMessage(err) {
+function apiErrorMessage(err, user) {
+  const base = baseErrorMessage(err);
+  // al proprietario si mostra anche il messaggio originale del servizio, utile per capire cosa non va
+  if (hasRole(user, 'owner') && err?.message && !(err instanceof ContentTooLargeError)) {
+    base.message += ` (dettaglio: ${String(err.message).slice(0, 300)})`;
+  }
+  return base;
+}
+
+function baseErrorMessage(err) {
   if (err instanceof ContentTooLargeError) return { status: 413, message: err.message };
   if (err instanceof gemini.GeminiError) {
+    if (/api key|api_key/i.test(err.message)) return { status: 502, message: 'La chiave Gemini non è valida: controlla GEMINI_API_KEY su Render.' };
     if (err.status === 429) return { status: 429, message: 'Raggiunto il limite gratuito dell\'AI: riprova tra un minuto (o domani, se è finito quello giornaliero).' };
-    if (err.status === 401 || err.status === 403) return { status: 502, message: 'Chiave Gemini non valida.' };
+    if (err.status === 401 || err.status === 403) return { status: 502, message: 'Accesso a Gemini negato: controlla la chiave GEMINI_API_KEY.' };
     if (err.status === 422) return { status: 422, message: 'L\'AI non può rispondere a questa richiesta.' };
     if (err.status === 413) return { status: 422, message: 'Risposta troppo lunga: riduci il numero di domande.' };
     if (err.status === 400) return { status: 400, message: 'Richiesta non accettata dall\'AI (forse il file allegato non è supportato).' };
-    return { status: 502, message: 'Errore temporaneo del servizio AI.' };
+    return { status: 502, message: 'Il servizio AI non risponde in questo momento, riprova tra poco.' };
   }
   if (err instanceof Anthropic.AuthenticationError) return { status: 502, message: 'Chiave API dell\'AI non valida.' };
   if (err instanceof Anthropic.RateLimitError) return { status: 429, message: 'L\'AI è sovraccarica, riprova tra poco.' };
   if (err instanceof Anthropic.BadRequestError) return { status: 400, message: 'Richiesta non accettata dall\'AI (forse il file allegato non è supportato).' };
   if (err instanceof Anthropic.APIError) return { status: 502, message: 'Errore temporaneo del servizio AI.' };
+  if (err?.name === 'TypeError' && /fetch/i.test(err.message)) return { status: 502, message: 'Il server non riesce a contattare il servizio AI.' };
   return { status: 500, message: 'Errore imprevisto dell\'assistente AI.' };
 }
+
+/** Prova dell'AI per il proprietario: risponde con il modello usato o con l'errore esatto. */
+router.post('/test', async (req, res) => {
+  if (!hasRole(req.user, 'owner')) return res.status(403).json({ error: 'Permessi insufficienti.' });
+  if (!config.aiEnabled) return res.json({ ok: false, error: 'Nessuna chiave AI impostata sul server (GEMINI_API_KEY).' });
+  try {
+    if (useGemini) {
+      const { model, reply } = await gemini.ping();
+      return res.json({ ok: true, provider: 'Google Gemini', model, reply });
+    }
+    const r = await client.messages.create({ model: config.aiModel, max_tokens: 64, messages: [{ role: 'user', content: 'Rispondi solo con: OK' }] });
+    res.json({ ok: true, provider: 'Claude', model: config.aiModel, reply: r.content.filter((b) => b.type === 'text').map((b) => b.text).join('') });
+  } catch (err) {
+    console.error('[AI test]', err?.message || err);
+    res.json({ ok: false, error: apiErrorMessage(err, req.user).message, status: err?.status ?? null });
+  }
+});
 
 /** Chat con il tutor: risposta in streaming (testo semplice, chunked). */
 router.post('/chat', async (req, res) => {
@@ -210,7 +238,7 @@ router.post('/chat', async (req, res) => {
       if (!res.writableEnded) res.end();
       return;
     }
-    const { status, message } = apiErrorMessage(err);
+    const { status, message } = apiErrorMessage(err, req.user);
     if (!(err instanceof ContentTooLargeError)) console.error('[AI chat]', err?.message || err);
     if (!res.headersSent) res.status(status).json({ error: message });
     else res.end(`\n\n_Errore: ${message}_`);
@@ -318,7 +346,7 @@ ${instructions ? `Indicazioni aggiuntive dello studente: ${instructions}` : ''}`
   } catch (err) {
     const { status, message } = err instanceof SyntaxError || /Domanda \d+|almeno una domanda/.test(err?.message || '')
       ? { status: 502, message: 'L\'AI ha restituito un quiz non valido, riprova.' }
-      : apiErrorMessage(err);
+      : apiErrorMessage(err, req.user);
     if (!(err instanceof ContentTooLargeError)) console.error('[AI quiz]', err?.message || err);
     res.status(status).json({ error: message });
   }

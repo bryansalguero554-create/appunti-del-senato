@@ -23,6 +23,7 @@ import { extOf, mimeFor } from './files.js';
 import * as drive from './drive.js';
 import { scheduleBackup } from './backup.js';
 import { restoreState } from './restore.js';
+import { normalizeName, defaultFor, applySubjectDefaults } from './seed.js';
 
 let queue = Promise.resolve();
 // File eliminati sul sito ma non ancora spostati nel cestino del Drive: non vanno reimportati.
@@ -86,8 +87,11 @@ function linkFolder(table, folder, parent) {
   let row = db.prepare(`SELECT * FROM ${table} WHERE drive_id = ?`).get(folder.id);
   if (!row) {
     // una materia/argomento creato sul sito con lo stesso nome viene collegato invece di duplicarlo
-    row = db.prepare(`SELECT * FROM ${table} WHERE drive_id IS NULL AND name = ? COLLATE NOCASE ${parentCol ? `AND ${parentCol} = ?` : ''}`)
-      .get(...[folder.name, ...(parentCol ? [parent] : [])]);
+    // (confronto tollerante: maiuscole, accenti e apostrofi "curvi" come in "Storia dell’arte")
+    const wanted = normalizeName(table === 'subjects' ? (defaultFor(folder.name)?.name || folder.name) : folder.name);
+    row = db.prepare(`SELECT * FROM ${table} WHERE drive_id IS NULL ${parentCol ? `AND ${parentCol} = ?` : ''}`)
+      .all(...(parentCol ? [parent] : []))
+      .find((r) => normalizeName(table === 'subjects' ? (defaultFor(r.name)?.name || r.name) : r.name) === wanted);
     if (row) db.prepare(`UPDATE ${table} SET drive_id = ? WHERE id = ?`).run(folder.id, row.id);
   }
   if (!row) {
@@ -194,6 +198,7 @@ export function syncNow() {
     const startedAt = Date.now();
     try {
       await pullFromDrive(stats);
+      applySubjectDefaults();
       await pushToDrive(stats);
       setSetting('drive_last_sync', new Date().toISOString());
       setSetting('drive_last_result', JSON.stringify({ ...stats, ms: Date.now() - startedAt }));
