@@ -27,4 +27,15 @@ export const config = {
   aiModel: env.AI_MODEL || 'claude-opus-5-5',
   aiEnabled: Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN),
   aiDailyLimit: Number(env.AI_DAILY_LIMIT) || 100,
+  publicUrl: (env.PUBLIC_URL || '').replace(/\/+$/, ''),
+  googleClientId: env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: env.GOOGLE_CLIENT_SECRET || '',
+  driveRefreshToken: env.DRIVE_REFRESH_TOKEN || '',
+  driveRootFolder: env.DRIVE_ROOT_FOLDER || '',
+  driveSyncMinutes: Number(env.DRIVE_SYNC_MINUTES) || 5,
+  driveMaxFileMb: Number(env.DRIVE_MAX_FILE_MB) || 100,
+  // sovrascrivibili solo per i test
+  googleApiBase: (env.GOOGLE_API_BASE || 'https://www.googleapis.com').replace(/\/+$/, ''),
+  googleTokenUrl: env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
+  googleAuthUrl: env.GOOGLE_AUTH_URL || 'https://accounts.google.com/o/oauth2/v2/auth',
 };

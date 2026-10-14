@@ -7,6 +7,7 @@ import { db, transaction } from '../db.js';
 import { config } from '../config.js';
 import { requireAuth, requireRole, canManage } from '../auth.js';
 import { extOf, mimeFor, servingPolicy, contentDisposition } from '../files.js';
+import { pushSubject, pushTopic, pushNotes, pushRename, pushTrash } from '../sync.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -52,6 +53,7 @@ router.post('/subjects', requireRole('moderator'), (req, res) => {
     'INSERT INTO subjects (name, description, icon, color, created_by) VALUES (?, ?, ?, ?, ?)',
   ).run(name, str(req.body?.description), str(req.body?.icon, 8) || '📚',
     /^#[0-9a-f]{6}$/i.test(req.body?.color) ? req.body.color : '#4f46e5', req.user.id);
+  pushSubject(Number(lastInsertRowid));
   res.status(201).json({ subject: db.prepare('SELECT * FROM subjects WHERE id = ?').get(lastInsertRowid) });
 });
 
@@ -91,16 +93,20 @@ router.patch('/subjects/:id', requireRole('moderator'), (req, res) => {
     /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : subject.color,
     subject.id,
   );
+  const renamed = str(b.name, 80);
+  if (renamed && renamed !== subject.name) pushRename(subject.drive_id, renamed);
   res.json({ subject: db.prepare('SELECT * FROM subjects WHERE id = ?').get(subject.id) });
 });
 
 router.delete('/subjects/:id', requireRole('moderator'), (req, res) => {
   const subjectId = id(req.params.id);
+  const driveId = db.prepare('SELECT drive_id FROM subjects WHERE id = ?').get(subjectId)?.drive_id;
   const files = db.prepare(`SELECT n.stored_name FROM notes n JOIN topics t ON t.id = n.topic_id WHERE t.subject_id = ?`)
     .all(subjectId).map((r) => r.stored_name);
   const { changes } = db.prepare('DELETE FROM subjects WHERE id = ?').run(subjectId);
   if (!changes) return notFound(res, 'Materia');
   removeStoredFiles(files);
+  pushTrash(driveId);
   res.json({ ok: true });
 });
 
@@ -114,6 +120,7 @@ router.post('/subjects/:id/topics', (req, res) => {
   const { lastInsertRowid } = db.prepare(
     'INSERT INTO topics (subject_id, name, description, created_by) VALUES (?, ?, ?, ?)',
   ).run(subject.id, name, str(req.body?.description), req.user.id);
+  pushTopic(Number(lastInsertRowid));
   res.status(201).json({ topic: db.prepare('SELECT * FROM topics WHERE id = ?').get(lastInsertRowid) });
 });
 
@@ -145,6 +152,8 @@ router.patch('/topics/:id', (req, res) => {
     req.body?.description !== undefined ? str(req.body.description) : topic.description,
     topic.id,
   );
+  const renamed = str(req.body?.name, 100);
+  if (renamed && renamed !== topic.name) pushRename(topic.drive_id, renamed);
   res.json({ topic: db.prepare('SELECT * FROM topics WHERE id = ?').get(topic.id) });
 });
 
@@ -155,6 +164,7 @@ router.delete('/topics/:id', (req, res) => {
   const files = db.prepare('SELECT stored_name FROM notes WHERE topic_id = ?').all(topic.id).map((r) => r.stored_name);
   db.prepare('DELETE FROM topics WHERE id = ?').run(topic.id);
   removeStoredFiles(files);
+  pushTrash(topic.drive_id);
   res.json({ ok: true });
 });
 
@@ -190,6 +200,7 @@ router.post('/topics/:id/notes', (req, res) => {
       return Number(insert.run(topic.id, req.user.id, noteTitle.slice(0, 150), description, file.filename, original,
         mimeFor(ext), ext, file.size).lastInsertRowid);
     }));
+    pushNotes(ids);
     res.status(201).json({ ids });
   });
 });
@@ -229,8 +240,8 @@ router.get('/notes/mine', (req, res) => {
 router.get('/notes/:id', (req, res) => {
   const note = getNote(id(req.params.id));
   if (!note) return notFound(res, 'Appunto');
-  const { stored_name: _s, ...rest } = note;
-  res.json({ note: { ...rest, policy: servingPolicy(note.mime), canManage: canManage(req.user, note.user_id) } });
+  const { stored_name: _s, drive_id: driveId, ...rest } = note;
+  res.json({ note: { ...rest, fromDrive: Boolean(driveId), policy: servingPolicy(note.mime), canManage: canManage(req.user, note.user_id) } });
 });
 
 // Il nome del file nell'URL è facoltativo: serve solo a mostrare un titolo sensato nel visualizzatore PDF.
@@ -271,6 +282,7 @@ router.delete('/notes/:id', (req, res) => {
   if (!canManage(req.user, note.user_id)) return res.status(403).json({ error: 'Permessi insufficienti.' });
   db.prepare('DELETE FROM notes WHERE id = ?').run(note.id);
   removeStoredFiles([note.stored_name]);
+  pushTrash(note.drive_id);
   res.json({ ok: true });
 });
 

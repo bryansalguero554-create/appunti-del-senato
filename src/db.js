@@ -115,6 +115,21 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `);
 
+// Migrazioni leggere per database creati con versioni precedenti.
+const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
+if (!userColumns.has('visits')) db.exec('ALTER TABLE users ADD COLUMN visits INTEGER NOT NULL DEFAULT 0');
+if (!userColumns.has('last_visit_at')) db.exec('ALTER TABLE users ADD COLUMN last_visit_at TEXT');
+
+// Collegamento con Google Drive: ogni materia/argomento/appunto può corrispondere a un elemento del Drive.
+for (const table of ['subjects', 'topics', 'notes']) {
+  const cols = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+  if (!cols.has('drive_id')) db.exec(`ALTER TABLE ${table} ADD COLUMN drive_id TEXT`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_drive ON ${table}(drive_id) WHERE drive_id IS NOT NULL`);
+}
+if (!new Set(db.prepare('PRAGMA table_info(notes)').all().map((c) => c.name)).has('drive_modified')) {
+  db.exec('ALTER TABLE notes ADD COLUMN drive_modified TEXT');
+}
+
 const defaults = {
   registration_open: 'true',
   site_name: 'Appunti del Senato',

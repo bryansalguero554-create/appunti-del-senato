@@ -1,0 +1,40 @@
+# Configurazione per Render (https://render.com): Dashboard → New → Blueprint → scegli questo repository.
+services:
+  - type: web
+    name: appunti-del-senato
+    runtime: node
+    plan: starter          # serve un piano a pagamento per avere il disco persistente
+    region: frankfurt
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: dati
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATA_DIR
+        value: /data/db
+      - key: UPLOAD_DIR
+        value: /data/uploads
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: TRUST_PROXY
+        value: "true"
+      - key: OWNER_EMAIL
+        value: bryansalguero26@icloud.com
+      - key: OWNER_NAME
+        value: Bryan
+      # I valori segreti si inseriscono a mano nella dashboard di Render (non vanno mai nel repository)
+      - key: OWNER_PASSWORD
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: PUBLIC_URL
+        sync: false

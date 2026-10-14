@@ -40,7 +40,7 @@ export function noteCard(n) {
     ? `<img loading="lazy" src="/api/notes/${n.id}/file" alt="">`
     : `<span class="ext-icon">${t.icon}</span>`;
   return `
-    <a class="card note-card" href="#/appunto/${n.id}">
+    <a class="card note-card tilt" data-tilt="6" href="#/appunto/${n.id}">
       <div class="note-thumb" ${n.ext === 'pdf' ? `data-pdf="${n.id}"` : ''}>${thumb}<span class="badge ext-label">${esc(n.ext || 'file')}</span></div>
       <div class="note-body">
         <div class="note-title">${esc(n.title)}</div>
@@ -79,7 +79,7 @@ export async function renderTopic(app, { params: [id] }) {
       <p class="muted small">Puoi caricare qualsiasi formato: PDF, Word, PowerPoint, Excel, HTML, immagini, audio, video, testo… (max ${state.site.maxUploadMb} MB per file, fino a 20 file insieme).</p>
       <form id="upload-form">
         <div class="dropzone" id="dropzone" tabindex="0">
-          <div style="font-size:2rem">📤</div>
+          <div class="drop-icon">📤</div>
           <strong>Trascina qui i file</strong> oppure clicca per sceglierli
           <input type="file" id="file-input" name="files" multiple hidden>
         </div>

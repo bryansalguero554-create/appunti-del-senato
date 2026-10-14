@@ -12,9 +12,20 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, created_at: u.created_at });
 
+// Una "visita" è un ritorno sul sito dopo almeno 30 minuti di assenza:
+// alla prima visita il saluto è "Ciao", da quella successiva "Bentornato".
+const VISIT_GAP_MINUTES = 30;
+function touchVisit(userId) {
+  db.prepare(`UPDATE users SET visits = visits + 1 WHERE id = ?
+              AND (last_visit_at IS NULL OR last_visit_at < datetime('now', '-${VISIT_GAP_MINUTES} minutes'))`).run(userId);
+  db.prepare("UPDATE users SET last_visit_at = datetime('now') WHERE id = ?").run(userId);
+  const { visits } = db.prepare('SELECT visits FROM users WHERE id = ?').get(userId);
+  return visits > 1 ? 'bentornato' : 'ciao';
+}
+
 router.get('/me', (req, res) => {
   res.json({
-    user: req.user ? publicUser(req.user) : null,
+    user: req.user ? { ...publicUser(req.user), greeting: touchVisit(req.user.id) } : null,
     site: {
       name: getSetting('site_name'),
       announcement: getSetting('announcement'),
@@ -46,8 +57,9 @@ router.post('/register', async (req, res) => {
     .run(email, name, hash);
   db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(lastInsertRowid);
   createSession(res, req, Number(lastInsertRowid));
+  const greeting = touchVisit(Number(lastInsertRowid));
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(lastInsertRowid);
-  res.status(201).json({ user: publicUser(user) });
+  res.status(201).json({ user: { ...publicUser(user), greeting } });
 });
 
 router.post('/login', async (req, res) => {
@@ -66,7 +78,7 @@ router.post('/login', async (req, res) => {
   clearFailedLogins(ip);
   db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(user.id);
   createSession(res, req, user.id);
-  res.json({ user: publicUser(user) });
+  res.json({ user: { ...publicUser(user), greeting: touchVisit(user.id) } });
 });
 
 router.post('/logout', (req, res) => {

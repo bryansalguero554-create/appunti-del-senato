@@ -8,6 +8,8 @@ import { renderQuizList, renderQuizTake, renderQuizEditor } from './pages/quiz.j
 import { renderProfile } from './pages/profile.js';
 import { renderAdmin } from './pages/admin.js';
 import { initAi } from './ai.js';
+import { renderNotFound } from './pages/notfound.js';
+import { initFx, pageEnter } from './fx.js';
 
 const routes = [
   [/^\/?$/, renderHome, 'home'],
@@ -53,20 +55,24 @@ async function router() {
   setAiContext(null);
   const match = routes.find(([re]) => re.test(path));
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.nav === match?.[2]));
+  window.scrollTo(0, 0);
   if (!match) {
-    app.innerHTML = '<div class="empty"><div class="big">🧭</div><p>Pagina non trovata.</p><a class="btn" href="#/">Torna alla home</a></div>';
+    renderNotFound(app);
+    pageEnter(app);
+    sendPresence();
     return;
   }
   app.innerHTML = spinner();
-  window.scrollTo(0, 0);
   try {
     const params = path.match(match[0]).slice(1);
     await match[1](app, { params, query, isStale: () => token !== renderToken });
   } catch (err) {
     if (token !== renderToken) return;
     if (err.status === 401) return;
-    app.innerHTML = `<div class="empty"><div class="big">⚠️</div><p>${esc(err.message)}</p><a class="btn" href="#/">Torna alla home</a></div>`;
+    if (err.status === 404) renderNotFound(app);
+    else app.innerHTML = `<div class="empty"><div class="big">⚠️</div><p>${esc(err.message)}</p><a class="btn" href="#/">Torna alla home</a></div>`;
   }
+  if (token === renderToken) pageEnter(app);
   sendPresence();
 }
 
@@ -194,6 +200,7 @@ window.addEventListener('hashchange', router);
     state.user = null;
   }
   initAi();
+  initFx($('#app'));
   router();
 }());
 
