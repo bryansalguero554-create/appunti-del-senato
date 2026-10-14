@@ -208,3 +208,17 @@ test('protezione: cartella principale svuotata non cancella le materie', async (
   const { data } = await call('GET', '/api/subjects');
   assert.equal(data.subjects.length, 2);
 });
+
+test('cartelle del Drive in minuscolo o con altri nomi ricevono icona e descrizione delle materie', async () => {
+  add('arte', FOLDER, ROOT);
+  add('filosofia', FOLDER, ROOT);
+  const r = await waitQueue();
+  assert.equal(r.status, 200);
+  const { data } = await call('GET', '/api/subjects');
+  const arte = data.subjects.find((x) => x.name === 'arte');
+  assert.equal(arte.icon, '🎨');
+  assert.equal(arte.description, 'Opere, artisti e movimenti artistici.');
+  const filo = data.subjects.find((x) => x.name === 'filosofia');
+  assert.equal(filo.icon, '🦉');
+  assert.equal(filo.description, 'Pensatori, correnti e grandi domande.');
+});

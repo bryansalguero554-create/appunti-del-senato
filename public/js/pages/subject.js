@@ -1,5 +1,5 @@
 import {
-  api, esc, timeAgo, fileType, emptyState, isModerator, openModal, confirmDialog, toast, setAiContext,
+  api, esc, timeAgo, fileType, emptyState, isModerator, openModal, confirmDialog, toast, setAiContext, cap,
 } from '../util.js';
 import { subjectForm } from './home.js';
 import { openQuizGenerator } from '../quizgen.js';
@@ -21,7 +21,7 @@ export async function renderSubject(app, { params: [id] }) {
     <div class="page-head">
       <div class="titles">
         <div class="breadcrumb"><a href="#/">Materie</a> ›</div>
-        <h1>${esc(subject.icon)} ${esc(subject.name)}</h1>
+        <h1>${esc(subject.icon)} ${esc(cap(subject.name))}</h1>
         ${subject.description ? `<p class="muted">${esc(subject.description)}</p>` : ''}
       </div>
       <div class="row">
@@ -48,7 +48,7 @@ export async function renderSubject(app, { params: [id] }) {
 
     <div class="section">
       <div class="section-head">
-        <h2>Quiz di ${esc(subject.name)}</h2>
+        <h2>Quiz di ${esc(cap(subject.name))}</h2>
         <span class="spacer"></span>
         <button class="btn btn-sm btn-primary" id="gen-quiz">✨ Genera quiz con AI</button>
       </div>

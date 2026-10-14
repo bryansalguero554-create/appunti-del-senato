@@ -1,5 +1,5 @@
 import {
-  api, esc, timeAgo, emptyState, confirmDialog, toast, toastError, setAiContext,
+  api, esc, timeAgo, emptyState, confirmDialog, toast, toastError, setAiContext, cap,
 } from '../util.js';
 import { openQuizGenerator } from '../quizgen.js';
 
@@ -18,7 +18,7 @@ export async function renderQuizList(app) {
     </div>
     ${subjects.length > 1 ? `<div class="chips" id="subject-chips" style="margin-bottom:16px">
       <button class="chip active" data-s="all">Tutte le materie</button>
-      ${subjects.map((s) => `<button class="chip" data-s="${s.id}">${esc(s.icon)} ${esc(s.name)}</button>`).join('')}</div>` : ''}
+      ${subjects.map((s) => `<button class="chip" data-s="${s.id}">${esc(s.icon)} ${esc(cap(s.name))}</button>`).join('')}</div>` : ''}
     <div class="list" id="quiz-list"></div>`;
 
   const draw = () => {
