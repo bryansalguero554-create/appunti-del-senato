@@ -29,7 +29,7 @@ export async function installApp() {
   const chrome = /CriOS/.test(navigator.userAgent);
   openModal('Installa l\'app', `
     <div class="install-card" style="margin-bottom:16px">
-      <img src="/icons/icon-192.png" alt="">
+      <picture><source srcset="/icons/icon-dark-192.png" media="(prefers-color-scheme: dark)"><img src="/icons/icon-192.png" alt=""></picture>
       <div><strong>Appunti del Senato</strong><div class="muted small">Si apre a tutto schermo, come un'app, direttamente dalla schermata Home.</div></div>
     </div>
     <ol style="padding-left:1.2rem;line-height:1.7">
@@ -48,7 +48,7 @@ export function maybeShowInstallBanner() {
   el.id = 'install-banner';
   el.className = 'install-banner';
   el.innerHTML = `
-    <img src="/icons/icon-192.png" alt="">
+    <picture><source srcset="/icons/icon-dark-192.png" media="(prefers-color-scheme: dark)"><img src="/icons/icon-192.png" alt=""></picture>
     <div class="grow"><strong>Installa l'app</strong><br><span class="muted">Appunti del Senato sulla tua schermata Home.</span></div>
     <button class="btn btn-primary btn-sm" type="button" data-install>Installa</button>
     <button class="icon-btn" type="button" data-close aria-label="Non ora">✕</button>`;
