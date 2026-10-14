@@ -11,7 +11,7 @@ Design minimalista in stile Apple, con tema chiaro/scuro automatico e animazioni
 |---|---|
 | **Home** | Saluto personale: **"Ciao Nome."** alla prima visita, **"Bentornato, Nome."** dalle visite successive, con scena 3D animata delle materie. |
 | **Account** | Registrazione e accesso con email e password (hash bcrypt), sessioni sicure, cambio password, elenco dei propri dispositivi con disconnessione remota. |
-| **Materie** | Card 3D che si inclinano seguendo il mouse, con icona, colore e contatori. |
+| **Materie** | Il sito parte con Storia, Filosofia, Scienze umane, Fisica, Italiano, Spagnolo, Inglese, Matematica, Diritto e Storia dell'arte (create una sola volta al primo avvio; il proprietario può aggiungerne, rinominarle o eliminarle). Card 3D che si inclinano seguendo il mouse. |
 | **Argomenti** | Le cartelle (es. *Modulo 1*) si "aprono" in 3D al passaggio del mouse e mostrano autori, formati e ultimi file. |
 | **Appunti** | Ogni utente carica i propri appunti (fino a 20 file insieme). Anteprime della prima pagina dei PDF e delle immagini, filtri per autore e formato. |
 | **Visualizzatore** | PDF, HTML (isolato in sandbox), Word, Excel/ODS, Markdown, testo/codice, CSV, immagini, audio e video direttamente nel browser; gli altri formati si scaricano. |
@@ -83,6 +83,8 @@ Appunti/                    ← cartella principale
 - Qualcuno crea una materia/argomento o carica un appunto **sul sito** → compare nella cartella giusta del Drive.
 - Eliminare sul sito sposta l'elemento nel **cestino** del Drive (recuperabile per 30 giorni).
 - I file messi direttamente nella cartella della materia (fuori da un argomento) non vengono importati.
+- Se nel Drive esiste già una cartella con il nome di una materia del sito (es. "Storia" o "storia"), le due vengono collegate;
+  le materie che nel Drive non ci sono ancora vengono create come nuove cartelle.
 
 **Configurazione (una volta sola, circa 10 minuti):**
 
