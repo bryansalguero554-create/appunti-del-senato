@@ -24,6 +24,7 @@ export const config = {
   ownerEmail: (env.OWNER_EMAIL || 'bryansalguero26@icloud.com').trim().toLowerCase(),
   ownerPassword: env.OWNER_PASSWORD || '',
   ownerName: env.OWNER_NAME || 'Proprietario',
+  contactEmail: (env.CONTACT_EMAIL || env.OWNER_EMAIL || 'bryansalguero26@icloud.com').trim(),
   aiModel: env.AI_MODEL || 'claude-opus-5-5',
   geminiApiKey: env.GEMINI_API_KEY || '',
   geminiModel: env.GEMINI_MODEL || '',

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{TITLE}} · {{SITE_NAME}}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/"><span class="brand-icon">📚</span><span>{{SITE_NAME}}</span></a>
+    <nav class="nav"><a href="/privacy">Privacy</a><a href="/termini">Termini</a></nav></header>
+  <main class="container page-enter" style="max-width:760px">
+    <article class="card prose" style="padding:36px 40px">
+{{CONTENT}}
+      <p class="muted small" style="margin-top:28px">Ultimo aggiornamento: {{UPDATED}}</p>
+    </article>
+  </main>
+</body>
+</html>

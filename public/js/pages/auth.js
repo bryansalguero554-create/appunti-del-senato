@@ -23,6 +23,7 @@ export function renderAuth(app, mode, onDone) {
         <div class="switch">${isLogin
           ? (state.site.registrationOpen ? 'Non hai un account? <a href="#/registrati">Registrati</a>' : '')
           : 'Hai già un account? <a href="#/accedi">Accedi</a>'}</div>
+        <p class="muted small" style="text-align:center;margin:18px 0 0"><a href="/privacy" class="muted">Privacy</a> · <a href="/termini" class="muted">Termini di servizio</a></p>
       </div>
     </div>`;
 
