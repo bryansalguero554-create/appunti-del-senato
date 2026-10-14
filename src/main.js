@@ -84,6 +84,7 @@ const vendor = {
   'pdf.mjs': 'pdfjs-dist/build/pdf.min.mjs',
   'pdf.worker.mjs': 'pdfjs-dist/build/pdf.worker.min.mjs',
 };
+app.use('/vendor/katex', express.static(path.join(config.root, 'node_modules', 'katex', 'dist'), { maxAge: '1d' }));
 app.get('/vendor/:file', (req, res, next) => {
   const rel = vendor[req.params.file];
   if (!rel) return next();

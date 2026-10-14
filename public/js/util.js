@@ -99,9 +99,44 @@ export function fileType(ext) {
 
 export const isImageExt = (ext) => ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'].includes(String(ext).toLowerCase());
 
+// Formule LaTeX: $$…$$, \[…\], \(…\) e $…$ (quest'ultimo solo se non sembra un prezzo).
+const MATH_RE = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/g;
+export const hasMath = (text) => MATH_RE.test(text || '') && !(MATH_RE.lastIndex = 0);
+
+let katexLoading = null;
+/** Carica KaTeX solo quando serve; onReady viene chiamato a caricamento finito. */
+export function ensureKatex(onReady) {
+  if (window.katex) return true;
+  if (!katexLoading) {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = '/vendor/katex/katex.min.css';
+    document.head.append(css);
+    katexLoading = loadScript('/vendor/katex/katex.min.js').catch(() => { katexLoading = null; });
+  }
+  katexLoading.then(() => window.katex && onReady?.());
+  return false;
+}
+
 export function renderMarkdown(md) {
-  const html = window.marked ? window.marked.parse(md || '', { breaks: true }) : esc(md).replace(/\n/g, '<br>');
-  return window.DOMPurify ? window.DOMPurify.sanitize(html) : esc(md);
+  let text = md || '';
+  const formulas = [];
+  if (window.katex) {
+    // le formule vengono messe da parte prima del Markdown, che altrimenti ne rovinerebbe i simboli
+    text = text.replace(MATH_RE, (m, block, block2, inline2, inline) => {
+      const tex = block ?? block2 ?? inline2 ?? inline;
+      const display = block !== undefined || block2 !== undefined;
+      try {
+        formulas.push(window.katex.renderToString(tex, { displayMode: display, throwOnError: false, output: 'html' }));
+        return `@@MATH${formulas.length - 1}@@`;
+      } catch {
+        return m;
+      }
+    });
+  }
+  const html = window.marked ? window.marked.parse(text, { breaks: true }) : esc(text).replace(/\n/g, '<br>');
+  const clean = window.DOMPurify ? window.DOMPurify.sanitize(html) : esc(text);
+  return formulas.length ? clean.replace(/@@MATH(\d+)@@/g, (m, i) => formulas[Number(i)] ?? m) : clean;
 }
 
 export const sanitize = (html) => (window.DOMPurify ? window.DOMPurify.sanitize(html) : esc(html));

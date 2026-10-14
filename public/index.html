@@ -33,24 +33,28 @@
   <main id="app" class="container"></main>
 
   <button class="ai-fab" id="ai-fab" hidden aria-label="Chiedi all'assistente AI"><span class="ai-orb"></span> <span>Chiedi all'AI</span></button>
-  <aside class="ai-drawer" id="ai-drawer" aria-hidden="true">
+  <aside class="ai-drawer" id="ai-drawer" aria-hidden="true" aria-label="Assistente di studio">
     <div class="ai-head">
-      <div>
-        <strong>Assistente di studio</strong>
-        <div class="ai-context" id="ai-context"></div>
+      <div class="ai-title">
+        <span class="ai-orb ai-orb-lg" aria-hidden="true"></span>
+        <div>
+          <strong>Assistente di studio</strong>
+          <div class="ai-context" id="ai-context"></div>
+        </div>
       </div>
       <div class="ai-head-actions">
-        <button class="icon-btn" id="ai-clear" title="Nuova conversazione">🗑️</button>
-        <button class="icon-btn" id="ai-close" title="Chiudi">✕</button>
+        <button class="icon-btn" id="ai-clear" title="Nuova conversazione" aria-label="Nuova conversazione">✎</button>
+        <button class="icon-btn" id="ai-close" title="Chiudi" aria-label="Chiudi">✕</button>
       </div>
     </div>
-    <div class="ai-messages" id="ai-messages"></div>
+    <div class="ai-messages" id="ai-messages" aria-live="polite"></div>
     <form class="ai-form" id="ai-form">
-      <label class="ai-attach" id="ai-attach-label" hidden><input type="checkbox" id="ai-attach" checked> Usa l'appunto aperto come riferimento</label>
+      <label class="ai-attach" id="ai-attach-label" hidden><input type="checkbox" id="ai-attach" checked> <span id="ai-attach-text">Usa l'appunto aperto come riferimento</span></label>
       <div class="ai-input-row">
-        <textarea id="ai-input" rows="2" placeholder="Scrivi il tuo dubbio… (Invio per inviare, Maiusc+Invio per andare a capo)"></textarea>
-        <button class="btn btn-primary" id="ai-send" type="submit">Invia</button>
+        <textarea id="ai-input" rows="1" placeholder="Fai una domanda…" aria-label="Scrivi la tua domanda"></textarea>
+        <button class="ai-send" id="ai-send" type="submit" aria-label="Invia">↑</button>
       </div>
+      <div class="ai-foot muted">L'AI può sbagliare: controlla sempre sugli appunti.</div>
     </form>
   </aside>
 
