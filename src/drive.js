@@ -4,6 +4,9 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { config } from './config.js';
 import { getSetting, setSetting } from './db.js';
+import { SYSTEM_FOLDER } from './restore.js';
+
+export { SYSTEM_FOLDER };
 
 export const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const SCOPE = 'https://www.googleapis.com/auth/drive';
@@ -92,7 +95,12 @@ export function forgetToken() {
 }
 
 async function request(url, { method = 'GET', headers = {}, body } = {}) {
-  const res = await fetch(url, { method, body, headers: { Authorization: `Bearer ${await accessToken()}`, ...headers } });
+  const res = await fetch(url, {
+    method,
+    body,
+    headers: { Authorization: `Bearer ${await accessToken()}`, ...headers },
+    ...(body && typeof body.pipe === 'function' ? { duplex: 'half' } : {}), // corpo in streaming: niente file interi in memoria
+  });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new DriveError(`Google Drive: ${data.error?.message || res.statusText}`, res.status);
@@ -122,7 +130,7 @@ export async function listChildren(folderId) {
   do {
     const data = await api('/files', {
       query: {
-        q: `'${folderId.replace(/['\\]/g, '\\$&')}' in parents and trashed = false`,
+        q: `'${esc(folderId)}' in parents and trashed = false`,
         fields: `nextPageToken,files(${FIELDS})`,
         pageSize: '1000',
         includeItemsFromAllDrives: 'true',
@@ -139,7 +147,31 @@ export async function listTopLevelFolders() {
   const data = await api('/files', {
     query: { q: `'root' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`, fields: 'files(id,name)', pageSize: '200', orderBy: 'name' },
   });
-  return data.files || [];
+  return (data.files || []).filter((f) => f.name !== SYSTEM_FOLDER);
+}
+
+const esc = (v) => String(v).replace(/['\\]/g, '\\$&');
+
+export async function findByName(name, parentId, mimeType) {
+  const data = await api('/files', {
+    query: {
+      q: `name = '${esc(name)}' and '${esc(parentId)}' in parents and trashed = false${mimeType ? ` and mimeType = '${mimeType}'` : ''}`,
+      fields: `files(${FIELDS})`,
+      pageSize: '10',
+      includeItemsFromAllDrives: 'true',
+    },
+  });
+  return data.files?.[0] || null;
+}
+
+/** Sostituisce il contenuto di un file esistente (stesso ID). */
+export async function updateFileContent(id, mime, filePath) {
+  const res = await request(`${config.googleApiBase}/upload/drive/v3/files/${encodeURIComponent(id)}?uploadType=media&supportsAllDrives=true&fields=${FIELDS}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': mime, 'Content-Length': String(fs.statSync(filePath).size) },
+    body: fs.createReadStream(filePath),
+  });
+  return res.json();
 }
 
 /** Scarica (o esporta, per i file nativi Google) il contenuto in destPath. */
@@ -169,7 +201,7 @@ export async function uploadFile(parentId, name, mime, filePath) {
   const res = await request(location, {
     method: 'PUT',
     headers: { 'Content-Type': mime, 'Content-Length': String(fs.statSync(filePath).size) },
-    body: fs.readFileSync(filePath),
+    body: fs.createReadStream(filePath),
   });
   return res.json();
 }

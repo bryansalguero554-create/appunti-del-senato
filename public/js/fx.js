@@ -47,7 +47,7 @@ window.addEventListener('pointermove', (e) => {
 }, { passive: true });
 
 // ---------- Comparsa a cascata ----------
-const STAGGER = '.grid > *, .stat-grid > *, .list > *';
+const STAGGER = '.grid > *, .subjects-grid > *, .stat-grid > *, .list > *';
 
 function stagger(root) {
   const groups = new Map();

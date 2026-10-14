@@ -21,6 +21,8 @@ import { db, getSetting, setSetting, transaction } from './db.js';
 import { config } from './config.js';
 import { extOf, mimeFor } from './files.js';
 import * as drive from './drive.js';
+import { scheduleBackup } from './backup.js';
+import { restoreState } from './restore.js';
 
 let queue = Promise.resolve();
 // File eliminati sul sito ma non ancora spostati nel cestino del Drive: non vanno reimportati.
@@ -115,7 +117,7 @@ function deleteMissing(table, where, params, seen, stats, key) {
 
 async function pullFromDrive(stats) {
   const root = drive.driveRoot();
-  const subjectFolders = (await drive.listChildren(root)).filter((f) => f.mimeType === drive.FOLDER_MIME);
+  const subjectFolders = (await drive.listChildren(root)).filter((f) => f.mimeType === drive.FOLDER_MIME && f.name !== drive.SYSTEM_FOLDER);
   const linkedSubjects = db.prepare('SELECT COUNT(*) AS n FROM subjects WHERE drive_id IS NOT NULL').get().n;
   // Protezione: se la cartella principale risulta vuota ma prima non lo era, non si cancella nulla.
   const allowDelete = subjectFolders.length > 0 || linkedSubjects === 0;
@@ -196,11 +198,44 @@ export function syncNow() {
       setSetting('drive_last_sync', new Date().toISOString());
       setSetting('drive_last_result', JSON.stringify({ ...stats, ms: Date.now() - startedAt }));
       setSetting('drive_last_error', '');
+      scheduleBackup();
       return stats;
     } finally {
       syncing = false;
     }
   });
+}
+
+// ---------- File in cache ----------
+
+const downloads = new Map();
+
+/**
+ * Garantisce che il file di un appunto sia presente sul disco del server.
+ * Con il Drive come cloud principale il disco può essere stato azzerato da un riavvio:
+ * in quel caso il file viene riscaricato dal Drive al primo accesso.
+ */
+export async function ensureLocalFile(note) {
+  const file = uploadPath(note.stored_name);
+  if (fs.existsSync(file)) return file;
+  if (!note.drive_id || !drive.driveConnected()) return null;
+  if (!downloads.has(note.id)) {
+    downloads.set(note.id, (async () => {
+      try {
+        const meta = await drive.getFile(note.drive_id);
+        const tmp = `${file}.part`;
+        await drive.downloadTo(meta, tmp);
+        fs.renameSync(tmp, file);
+        return file;
+      } catch (err) {
+        console.error('[Drive] download appunto:', err.message);
+        return null;
+      } finally {
+        downloads.delete(note.id);
+      }
+    })());
+  }
+  return downloads.get(note.id);
 }
 
 // ---------- Modifiche fatte sul sito, riportate sul Drive ----------
@@ -267,6 +302,10 @@ export function driveStatus() {
     lastSync: getSetting('drive_last_sync') || null,
     lastResult,
     lastError: getSetting('drive_last_error') || '',
+    lastBackup: getSetting('drive_last_backup') || null,
+    backupBlocked: restoreState.failed ? restoreState.error : '',
+    // con un server gratuito il token va salvato anche nelle variabili d'ambiente, altrimenti si perde al riavvio
+    tokenInEnv: Boolean(config.driveRefreshToken),
     syncing,
     intervalMinutes: config.driveSyncMinutes,
   };

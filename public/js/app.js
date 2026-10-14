@@ -78,7 +78,7 @@ async function router() {
 
 function showChrome(visible) {
   $('#topbar').hidden = !visible;
-  $('#ai-fab').hidden = !visible;
+  $('#ai-fab').hidden = !visible || !state.site.aiEnabled;
   $('#nav-admin').hidden = state.user?.role !== 'owner';
   $('#site-name').textContent = state.site.name || 'Appunti';
   document.title = state.site.name || 'Appunti';

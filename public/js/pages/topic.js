@@ -69,7 +69,7 @@ export async function renderTopic(app, { params: [id] }) {
       </div>
       <div class="row">
         ${canEdit ? '<button class="btn" id="edit-topic">Modifica</button><button class="btn btn-danger" id="delete-topic">Elimina</button>' : ''}
-        <button class="btn" id="ask-ai">🤖 Chiedi all'AI</button>
+        ${state.site.aiEnabled ? '<button class="btn" id="ask-ai">🤖 Chiedi all\'AI</button>' : ''}
         <button class="btn btn-primary" id="show-upload">⬆️ Carica appunti</button>
       </div>
     </div>
@@ -216,7 +216,7 @@ export async function renderTopic(app, { params: [id] }) {
     xhr.send(fd);
   });
 
-  app.querySelector('#ask-ai').addEventListener('click', () => openAi());
+  app.querySelector('#ask-ai')?.addEventListener('click', () => openAi());
   app.querySelector('#edit-topic')?.addEventListener('click', () => {
     openModal('Modifica argomento', topicForm(topic), async (fd) => {
       await api(`/topics/${topic.id}`, { method: 'PATCH', body: Object.fromEntries(fd) });

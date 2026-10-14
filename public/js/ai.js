@@ -39,7 +39,7 @@ function updateContext() {
 function renderMessages() {
   const box = $('#ai-messages');
   if (!state.site.aiEnabled) {
-    box.innerHTML = '<div class="msg assistant">L\'assistente AI non è ancora configurato. Il proprietario del sito deve impostare la chiave <code>ANTHROPIC_API_KEY</code>.</div>';
+    box.innerHTML = '<div class="msg assistant">L\'assistente AI non è ancora configurato. Il proprietario del sito deve impostare la chiave gratuita <code>GEMINI_API_KEY</code>.</div>';
     return;
   }
   if (!history.length) {
