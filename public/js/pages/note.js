@@ -1,6 +1,6 @@
 import {
   state, api, esc, formatBytes, formatDate, fileType, openModal, confirmDialog, toast, toastError,
-  setAiContext, renderMarkdown, sanitize, loadScript, spinner, loadPdfJs,
+  setAiContext, renderMarkdown, sanitize, loadScript, spinner, loadPdfJs, closeModal,
 } from '../util.js';
 import { openAi } from '../ai.js';
 import { openQuizGenerator } from '../quizgen.js';
@@ -234,6 +234,66 @@ function addContentZoom(el) {
   if (content) addZoomBar(el, (z) => { content.style.zoom = z === 1 ? '' : String(z); }, content);
 }
 
+// ---------- Download ----------
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+const shareFile = (file, note) => navigator.share({ files: [file], title: note.title });
+
+/** Il file è pronto ma il tocco è "scaduto" durante lo scaricamento: serve un secondo tocco per salvarlo. */
+function offerSave(file, note) {
+  openModal('File pronto', `<p><strong>${esc(note.original_name)}</strong> è pronto.</p>
+    <p class="muted small">Tocca il pulsante e scegli <strong>Salva su File</strong> (o <strong>Salva immagine</strong>).</p>
+    <div class="modal-actions"><button class="btn btn-primary" type="button" id="save-file">💾 Salva il file</button></div>`);
+  document.getElementById('save-file').addEventListener('click', async () => {
+    try {
+      await shareFile(file, note);
+      closeModal();
+    } catch (err) {
+      if (err.name !== 'AbortError') toastError(err);
+    }
+  });
+}
+
+/**
+ * Scarica il file dell'appunto. Su iPhone/iPad (soprattutto nell'app installata) i link di download non
+ * funzionano: il file si scarica dal sito e si apre il foglio di condivisione con "Salva su File".
+ * Altrove si avvia un normale download.
+ */
+async function downloadNote(note, btn) {
+  if (btn.dataset.busy) return;
+  btn.dataset.busy = '1';
+  const label = btn.innerHTML;
+  btn.innerHTML = '⏳ Preparo il file…';
+  try {
+    const res = await fetch(`/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}?download=1`);
+    if (!res.ok) throw new Error(res.status === 404 ? 'Il file non è più disponibile sul server.' : `Download non riuscito (errore ${res.status}).`);
+    const blob = await res.blob();
+    const file = new File([blob], note.original_name, { type: blob.type || note.mime || 'application/octet-stream' });
+    if (isIOS && navigator.canShare?.({ files: [file] })) {
+      try {
+        await shareFile(file, note);
+      } catch (err) {
+        if (err.name === 'NotAllowedError') offerSave(file, note);
+        else if (err.name !== 'AbortError') throw err;
+      }
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = note.original_name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+    toast('Download avviato');
+  } catch (err) {
+    toastError(err);
+  } finally {
+    btn.innerHTML = label;
+    delete btn.dataset.busy;
+  }
+}
+
 async function renderViewer(el, note) {
   const url = `/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}`;
   const ext = note.ext;
@@ -242,7 +302,7 @@ async function renderViewer(el, note) {
     el.innerHTML = `<div class="no-preview"><div class="big">${fileType(ext).icon}</div>
       <p><strong>${esc(note.original_name)}</strong></p>
       <p class="muted">${msg || 'L\'anteprima di questo formato non è disponibile nel browser.'}</p>
-      <a class="btn btn-primary" href="${url}?download=1">⬇️ Scarica il file</a></div>`;
+      <a class="btn btn-primary" href="${url}?download=1" data-download>⬇️ Scarica il file</a></div>`;
   };
 
   if (mime === 'text/html' || mime === 'application/xhtml+xml') {
@@ -375,7 +435,7 @@ export async function renderNote(app, { params: [id] }) {
         <div class="actions">
           <button class="btn btn-primary" id="fullscreen">⤢ Schermo intero</button>
           <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}" target="_blank" rel="noopener">↗️ Apri in una nuova scheda</a>
-          <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}?download=1">⬇️ Scarica</a>
+          <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}?download=1" data-download>⬇️ Scarica</a>
           ${state.site.aiEnabled ? `<button class="btn" id="ai-explain">🤖 Spiegami questo appunto</button>
           <button class="btn" id="ai-ask">💬 Ho un dubbio</button>
           <button class="btn" id="gen-quiz">✨ Genera quiz da questo appunto</button>` : ''}
@@ -386,6 +446,12 @@ export async function renderNote(app, { params: [id] }) {
 
   const viewer = app.querySelector('#viewer');
   renderViewer(viewer, note);
+  app.querySelector('.viewer-layout').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-download]');
+    if (!btn) return;
+    e.preventDefault();
+    downloadNote(note, btn);
+  });
 
   // "Schermo intero" fatto in CSS: funziona anche su iPhone, dove l'API Fullscreen non esiste per le pagine.
   const closeBtn = document.createElement('button');
