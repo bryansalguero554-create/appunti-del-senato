@@ -89,8 +89,9 @@ function assistantHtml(m, i, isLast) {
         ${isLast ? '<button type="button" data-regen title="Rigenera la risposta">↻ Rigenera</button>' : ''}
       </div>`
     : m.error ? '<div class="msg-actions"><button type="button" data-retry>↻ Riprova</button></div>' : '';
-  return `<div class="msg assistant ${m.error ? 'error' : ''} ${m.pending ? 'typing' : ''}">
-    <div class="prose">${m.error ? esc(m.content) : renderMarkdown(m.content)}</div>${actions}</div>`;
+  return `<div class="msg-row"><img class="msg-avatar" src="/icons/ai-64.png" alt="" aria-hidden="true">
+    <div class="msg assistant ${m.error ? 'error' : ''} ${m.pending ? 'typing' : ''}">
+    <div class="prose">${m.error ? esc(m.content) : renderMarkdown(m.content)}</div>${actions}</div></div>`;
 }
 
 function renderMessages() {
@@ -103,7 +104,7 @@ function renderMessages() {
     const first = (state.user?.name || '').trim().split(/\s+/)[0];
     box.innerHTML = `
       <div class="ai-welcome">
-        <div class="ai-orb ai-orb-xl" aria-hidden="true"></div>
+        <img class="ai-icon ai-icon-xl" src="/icons/ai-256.png" alt="" aria-hidden="true">
         <h3>Ciao${first ? ` ${esc(first)}` : ''}, come posso aiutarti?</h3>
         <p class="muted small">${state.aiContext?.noteId ? 'Sto guardando l\'appunto che hai aperto: chiedimi qualsiasi cosa.' : 'Chiedimi di spiegarti un argomento, risolvere un esercizio o prepararti all\'interrogazione.'}</p>
       </div>
