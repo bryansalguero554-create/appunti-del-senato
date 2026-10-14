@@ -1,6 +1,6 @@
 import {
   state, api, esc, formatBytes, formatDate, fileType, openModal, confirmDialog, toast, toastError,
-  setAiContext, renderMarkdown, sanitize, loadScript, spinner,
+  setAiContext, renderMarkdown, sanitize, loadScript, spinner, loadPdfJs,
 } from '../util.js';
 import { openAi } from '../ai.js';
 import { openQuizGenerator } from '../quizgen.js';
@@ -38,6 +38,202 @@ function decodeHtml(buffer) {
   }
 }
 
+// ---------- Zoom ----------
+// Livello 1 = "Adatta": la pagina intera entra in larghezza. I tasti ingrandiscono o riducono rispetto a quello.
+const ZOOM_STEPS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4];
+
+const ZMIN = ZOOM_STEPS[0];
+const ZMAX = ZOOM_STEPS.at(-1);
+
+/**
+ * Barra dello zoom (tasti − / Pagina intera / +) e zoom con due dita o con il trackpad su "surface".
+ * Restituisce set(z) per aggiornare lo zoom dall'esterno.
+ */
+function addZoomBar(el, apply, surface) {
+  let z = 1;
+  const bar = document.createElement('div');
+  bar.className = 'zoom-bar';
+  bar.innerHTML = `<button type="button" data-z="out" aria-label="Riduci">−</button>
+    <button type="button" data-z="fit" class="zoom-level" title="Torna alla pagina intera">Pagina intera</button>
+    <button type="button" data-z="in" aria-label="Ingrandisci">+</button>`;
+  const label = bar.querySelector('.zoom-level');
+  const set = (v, anchor) => {
+    v = Math.min(ZMAX, Math.max(ZMIN, v));
+    if (Math.abs(v - 1) < 0.04) v = 1; // vicino alla pagina intera: si aggancia
+    // il punto sotto le dita resta fermo mentre si ingrandisce
+    let keep;
+    if (surface && anchor) {
+      const r = surface.getBoundingClientRect();
+      const ax = anchor.x - r.left;
+      const ay = anchor.y - r.top;
+      keep = { ax, ay, rx: (surface.scrollLeft + ax) / surface.scrollWidth, ry: (surface.scrollTop + ay) / surface.scrollHeight };
+    }
+    z = v;
+    label.textContent = z === 1 ? 'Pagina intera' : `${Math.round(z * 100)}%`;
+    bar.querySelector('[data-z="out"]').disabled = z <= ZOOM_STEPS[0];
+    bar.querySelector('[data-z="in"]').disabled = z >= ZOOM_STEPS.at(-1);
+    apply(z);
+    if (keep) {
+      surface.scrollLeft = keep.rx * surface.scrollWidth - keep.ax;
+      surface.scrollTop = keep.ry * surface.scrollHeight - keep.ay;
+    }
+  };
+  bar.addEventListener('click', (e) => {
+    const k = e.target.closest('[data-z]')?.dataset.z;
+    if (k === 'fit') set(1);
+    else if (k === 'in') set(ZOOM_STEPS.find((v) => v > z + 1e-3) ?? z);
+    else if (k === 'out') set([...ZOOM_STEPS].reverse().find((v) => v < z - 1e-3) ?? z);
+  });
+  el.prepend(bar);
+  if (surface) enablePinch(surface, () => z, set);
+  return set;
+}
+
+function enablePinch(surface, get, set) {
+  let start = null;
+  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const mid = (t) => ({ x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 });
+  surface.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 2) return;
+    e.preventDefault(); // il secondo dito: il gesto diventa uno zoom, non uno scorrimento
+    start = { d: dist(e.touches) || 1, z: get() };
+  }, { passive: false });
+  surface.addEventListener('touchmove', (e) => {
+    if (!start || e.touches.length !== 2) return;
+    e.preventDefault(); // ingrandisce l'appunto, non tutta la pagina
+    set(start.z * (dist(e.touches) / start.d), mid(e.touches));
+  }, { passive: false });
+  surface.addEventListener('touchend', (e) => { if (e.touches.length < 2) start = null; });
+  surface.addEventListener('touchcancel', () => { start = null; });
+  surface.addEventListener('gesturestart', (e) => e.preventDefault()); // Safari
+  // trackpad del computer (pizzico = rotella con Ctrl)
+  surface.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    set(get() * Math.exp(-e.deltaY * 0.01), { x: e.clientX, y: e.clientY });
+  }, { passive: false });
+}
+
+// Script aggiunto alle pagine HTML: le rimpicciolisce finché entrano in larghezza, poi applica lo zoom scelto.
+// Gestisce anche lo zoom con due dita dentro la pagina e lo comunica al sito per aggiornare la barra.
+const HTML_FIT = `<style>html{touch-action:pan-x pan-y}</style><script>(function(){var z=1,f=1,s=null;function fit(){var d=document.documentElement;if(!d)return;d.style.zoom='';
+var w=Math.max(d.scrollWidth,document.body?document.body.scrollWidth:0)||innerWidth;f=Math.min(1,innerWidth/w);d.style.zoom=String(f*z)}
+function setZ(v,mx,my){v=Math.min(4,Math.max(0.5,v));if(Math.abs(v-1)<0.04)v=1;var k=v/z,x=scrollX+mx,y=scrollY+my;z=v;fit();scrollTo(x*k-mx,y*k-my);parent.postMessage({appuntiZoomChanged:z},'*')}
+function dist(t){return Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY)||1}
+addEventListener('touchstart',function(e){if(e.touches.length===2){e.preventDefault();s={d:dist(e.touches),z:z}}},{passive:false});
+addEventListener('touchmove',function(e){if(!s||e.touches.length!==2)return;e.preventDefault();var t=e.touches;setZ(s.z*dist(t)/s.d,(t[0].clientX+t[1].clientX)/2,(t[0].clientY+t[1].clientY)/2)},{passive:false});
+addEventListener('touchend',function(e){if(e.touches.length<2)s=null});
+addEventListener('gesturestart',function(e){e.preventDefault()});
+addEventListener('wheel',function(e){if(!e.ctrlKey)return;e.preventDefault();setZ(z*Math.exp(-e.deltaY*0.01),e.clientX,e.clientY)},{passive:false});
+addEventListener('message',function(e){if(e.source===parent&&e.data&&e.data.appuntiZoom){z=e.data.appuntiZoom;fit()}});
+document.addEventListener('DOMContentLoaded',fit);addEventListener('load',function(){fit();setTimeout(fit,600);setTimeout(fit,2000)});
+addEventListener('resize',fit)})();<\/script>`;
+
+function withFit(html) {
+  for (const re of [/<head(\s[^>]*)?>/i, /<html(\s[^>]*)?>/i]) {
+    const m = html.match(re);
+    if (m) return html.slice(0, m.index + m[0].length) + HTML_FIT + html.slice(m.index + m[0].length);
+  }
+  return HTML_FIT + html;
+}
+
+/** PDF disegnato con pdf.js: si vede la pagina intera, si scorre e si può ingrandire (anche su iPhone/iPad). */
+async function renderPdf(el, url) {
+  const pdfjs = await loadPdfJs();
+  const doc = await pdfjs.getDocument({ url }).promise;
+  const scroller = document.createElement('div');
+  scroller.className = 'pdf-scroll';
+  const pagesEl = document.createElement('div');
+  pagesEl.className = 'pdf-pages';
+  scroller.append(pagesEl);
+  const first = (await doc.getPage(1)).getViewport({ scale: 1 });
+  const pages = Array.from({ length: doc.numPages }, (_, i) => {
+    const div = document.createElement('div');
+    div.className = 'pdf-page';
+    div.style.aspectRatio = `${first.width} / ${first.height}`;
+    pagesEl.append(div);
+    return { n: i + 1, div, dirty: true, busy: false, again: false, visible: false };
+  });
+  el.replaceChildren(scroller);
+
+  let zoom = 1;
+  const render = async (p) => {
+    if (p.busy) { p.again = true; return; }
+    p.busy = true;
+    try {
+      const page = await doc.getPage(p.n);
+      const base = page.getViewport({ scale: 1 });
+      p.div.style.aspectRatio = `${base.width} / ${base.height}`;
+      // risoluzione adatta allo schermo, con un tetto per non esaurire la memoria del telefono
+      let scale = (p.div.clientWidth * Math.min(window.devicePixelRatio || 1, 3)) / base.width;
+      scale = Math.min(scale, 4096 / base.width, Math.sqrt(12e6 / (base.width * base.height)));
+      const vp = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(vp.width);
+      canvas.height = Math.floor(vp.height);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+      p.div.replaceChildren(canvas);
+      p.dirty = false;
+    } catch {
+      // pagina non disegnabile: resta bianca
+    } finally {
+      p.busy = false;
+      if (p.again) { p.again = false; render(p); }
+    }
+  };
+  const renderVisible = () => pages.filter((p) => p.visible && p.dirty).forEach(render);
+  const io = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const p = pages[Number(entry.target.dataset.i)];
+      p.visible = entry.isIntersecting;
+      if (!p.visible && p.div.firstChild) { p.div.firstChild.width = 0; p.div.replaceChildren(); p.dirty = true; } // libera memoria
+    }
+    renderVisible();
+  }, { root: scroller, rootMargin: '150% 0px' });
+  pages.forEach((p, i) => { p.div.dataset.i = i; io.observe(p.div); });
+
+  let timer;
+  const layout = () => {
+    const fit = scroller.clientWidth - parseFloat(getComputedStyle(scroller).paddingLeft) * 2;
+    const ratioY = scroller.scrollHeight ? scroller.scrollTop / scroller.scrollHeight : 0;
+    pagesEl.style.width = `${Math.max(100, Math.round(fit * zoom))}px`;
+    scroller.scrollTop = ratioY * scroller.scrollHeight;
+    pages.forEach((p) => { p.dirty = true; });
+    clearTimeout(timer);
+    timer = setTimeout(renderVisible, 200); // nel frattempo il browser ingrandisce le pagine già disegnate
+  };
+  let lastWidth = 0;
+  const ro = new ResizeObserver(() => {
+    if (scroller.clientWidth !== lastWidth) { lastWidth = scroller.clientWidth; layout(); }
+  });
+  ro.observe(scroller);
+  window.addEventListener('route-change', () => { io.disconnect(); ro.disconnect(); doc.destroy(); }, { once: true });
+  addZoomBar(el, (z) => { zoom = z; layout(); }, scroller);
+}
+
+function renderImage(el, url, title) {
+  const box = document.createElement('div');
+  box.className = 'img-scroll';
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = title;
+  box.append(img);
+  el.replaceChildren(box);
+  addZoomBar(el, (z) => {
+    box.classList.toggle('zoomed', z !== 1);
+    if (z === 1) { img.style.width = ''; return; }
+    // larghezza della "pagina intera" (l'immagine tutta visibile) moltiplicata per lo zoom
+    const fit = Math.min(box.clientWidth / img.naturalWidth, (box.clientHeight || window.innerHeight * 0.85) / img.naturalHeight, 1);
+    img.style.width = `${Math.round(img.naturalWidth * fit * z)}px`;
+  }, box);
+}
+
+/** Testo, Word, fogli di calcolo: lo zoom ingrandisce il contenuto, che resta nella larghezza dello schermo. */
+function addContentZoom(el) {
+  const content = el.querySelector('.doc, pre');
+  if (content) addZoomBar(el, (z) => { content.style.zoom = z === 1 ? '' : String(z); }, content);
+}
+
 async function renderViewer(el, note) {
   const url = `/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}`;
   const ext = note.ext;
@@ -63,8 +259,23 @@ async function renderViewer(el, note) {
       const frame = document.createElement('iframe');
       frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals');
       frame.title = note.title;
-      frame.srcdoc = decodeHtml(await res.arrayBuffer());
+      frame.srcdoc = withFit(decodeHtml(await res.arrayBuffer()));
+      let zoom = 1;
+      frame.addEventListener('load', () => frame.contentWindow?.postMessage({ appuntiZoom: zoom }, '*'));
       el.replaceChildren(frame);
+      const setZoom = addZoomBar(el, (z) => {
+        if (z === zoom) return;
+        zoom = z;
+        frame.contentWindow?.postMessage({ appuntiZoom: z }, '*');
+      });
+      // zoom fatto con le dita dentro la pagina: si aggiorna la barra
+      const onMessage = (e) => {
+        if (e.source !== frame.contentWindow || typeof e.data?.appuntiZoomChanged !== 'number') return;
+        zoom = e.data.appuntiZoomChanged;
+        setZoom(zoom);
+      };
+      window.addEventListener('message', onMessage);
+      window.addEventListener('route-change', () => window.removeEventListener('message', onMessage), { once: true });
     } catch (err) {
       noPreview(`Impossibile aprire la pagina (${esc(err.message)}).`);
     }
@@ -76,11 +287,17 @@ async function renderViewer(el, note) {
     return;
   }
   if (mime === 'application/pdf') {
-    el.innerHTML = `<iframe src="${url}#view=FitH" title="${esc(note.title)}"></iframe>`;
+    el.innerHTML = spinner();
+    try {
+      await renderPdf(el, url);
+    } catch {
+      // pdf.js non riesce ad aprirlo: si prova con il visualizzatore del browser
+      el.innerHTML = `<iframe src="${url}#view=FitH" title="${esc(note.title)}"></iframe>`;
+    }
     return;
   }
   if (mime.startsWith('image/')) {
-    el.innerHTML = `<img src="${url}" alt="${esc(note.title)}">`;
+    renderImage(el, url, note.title);
     return;
   }
   if (mime.startsWith('video/')) {
@@ -100,6 +317,7 @@ async function renderViewer(el, note) {
       if (ext === 'md' || ext === 'markdown') el.innerHTML = `<div class="doc prose">${renderMarkdown(text)}</div>`;
       else if (ext === 'csv' || ext === 'tsv') el.innerHTML = `<div class="doc">${tableHtml(parseCsv(text, ext === 'tsv' ? '\t' : (text.split(';').length > text.split(',').length ? ';' : ',')))}</div>`;
       else el.innerHTML = `<pre>${esc(text)}</pre>`;
+      addContentZoom(el);
       return;
     }
     if (ext === 'docx') {
@@ -107,6 +325,7 @@ async function renderViewer(el, note) {
       const buf = await (await fetch(url)).arrayBuffer();
       const { value } = await window.mammoth.convertToHtml({ arrayBuffer: buf });
       el.innerHTML = `<div class="doc prose">${sanitize(value) || '<p class="muted">Documento vuoto.</p>'}</div>`;
+      addContentZoom(el);
       return;
     }
     if (['xlsx', 'xls', 'ods'].includes(ext)) {
@@ -120,6 +339,7 @@ async function renderViewer(el, note) {
       el.innerHTML = `${wb.SheetNames.length > 1 ? `<div class="sheet-tabs chips">${wb.SheetNames.map((n) => `<button class="chip" data-sheet="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}<div class="doc"></div>`;
       el.querySelector('.sheet-tabs')?.addEventListener('click', (e) => { const c = e.target.closest('[data-sheet]'); if (c) show(c.dataset.sheet); });
       show(wb.SheetNames[0]);
+      addContentZoom(el);
       return;
     }
   } catch (err) {

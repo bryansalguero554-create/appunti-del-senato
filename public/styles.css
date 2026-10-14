@@ -381,7 +381,8 @@ a.list-item:hover::after { transform: translateX(3px); }
 .viewer-layout { display: grid; grid-template-columns: 1fr 300px; gap: 24px; align-items: start; }
 @media (max-width: 960px) { .viewer-layout { grid-template-columns: 1fr; } }
 .viewer { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; min-height: 300px; }
-.viewer iframe { width: 100%; height: 80vh; border: 0; display: block; background: #fff; }
+/* width 1px + min-width 100%: evita che su iPhone l'iframe si allarghi oltre lo schermo */
+.viewer iframe { width: 1px; min-width: 100%; height: 80vh; border: 0; display: block; background: #fff; }
 .viewer img { display: block; margin: 0 auto; max-height: 85vh; object-fit: contain; }
 .viewer video, .viewer audio { width: 100%; display: block; }
 .viewer audio { padding: 28px; }
@@ -591,7 +592,8 @@ table.data select { width: auto; padding: 5px 10px; font-size: .85rem; }
 
 /* ---------- Visualizzatore a schermo intero (anche su iPhone/iPad) ---------- */
 .viewer.is-full { position: fixed; inset: 0; z-index: 90; border-radius: 0; min-height: 0; display: flex; flex-direction: column; animation: fade-in .25s ease; padding-top: env(safe-area-inset-top); }
-.viewer.is-full > iframe, .viewer.is-full > .doc, .viewer.is-full > pre { flex: 1; height: auto; max-height: none; }
+.viewer.is-full > iframe, .viewer.is-full > .doc, .viewer.is-full > pre, .viewer.is-full > .pdf-scroll, .viewer.is-full > .img-scroll { flex: 1; height: auto; max-height: none; min-height: 0; }
+.viewer.is-full > .zoom-bar { padding-right: 64px; padding-left: 64px; }
 .viewer.is-full > img { max-height: 100vh; margin: auto; }
 .viewer-close { position: fixed; top: calc(12px + env(safe-area-inset-top)); right: 12px; z-index: 91; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgb(0 0 0 / .65); color: #fff; font-size: 1.1rem; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 body.no-scroll { overflow: hidden; }
@@ -662,3 +664,25 @@ img.auth-logo { display: block; margin: 0 auto 12px; width: 84px; height: 84px; 
 
 /* le immagini dentro <picture> si comportano come se il <picture> non ci fosse */
 picture { display: contents; }
+
+/* ---------- Zoom degli appunti ---------- */
+.zoom-bar { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.zoom-bar button { min-width: 40px; height: 34px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 1.05rem; cursor: pointer; transition: background .2s, transform .2s var(--spring); }
+.zoom-bar button:active { transform: scale(.94); }
+.zoom-bar button:disabled { opacity: .4; cursor: default; }
+.zoom-bar .zoom-level { min-width: 120px; font-size: .84rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pdf-scroll { overflow: auto; max-height: 80vh; padding: 12px; background: var(--surface-3); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.pdf-pages { display: flex; flex-direction: column; gap: 12px; margin: 0 auto; }
+.pdf-page { width: 100%; background: #fff; border-radius: 4px; box-shadow: 0 1px 4px rgb(0 0 0 / .18); overflow: hidden; }
+/* le pagine vengono ridisegnate durante lo zoom: il dito deve restare "sulla pagina", non sul disegno */
+.pdf-page canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+.img-scroll { overflow: auto; max-height: 85vh; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.img-scroll img { display: block; margin: 0 auto; max-width: 100%; max-height: 85vh; object-fit: contain; }
+.img-scroll.zoomed img { max-width: none; max-height: none; }
+/* il pizzico con due dita ingrandisce l'appunto (gestito dal sito), non tutta la pagina */
+.pdf-scroll, .img-scroll, .viewer .doc, .viewer pre { touch-action: pan-x pan-y; }
+.viewer.is-full .img-scroll img:not([style*="width"]) { max-height: calc(100vh - 60px); }
+@media (max-width: 600px) {
+  .pdf-scroll { max-height: 72vh; padding: 6px; }
+  .pdf-pages { gap: 6px; }
+}
