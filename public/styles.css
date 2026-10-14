@@ -659,3 +659,6 @@ img.auth-logo { display: block; margin: 0 auto 12px; width: 84px; height: 84px; 
 .install-banner { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 45; display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 18px; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); box-shadow: var(--shadow-lift); border: 1px solid var(--border); animation: toast-in .5s var(--spring); }
 .install-banner img { width: 44px; height: 44px; border-radius: 11px; flex: none; }
 .install-banner .grow { flex: 1; min-width: 0; font-size: .85rem; line-height: 1.35; }
+
+/* le immagini dentro <picture> si comportano come se il <picture> non ci fosse */
+picture { display: contents; }

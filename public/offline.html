@@ -4,13 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Sei offline · Appunti del Senato</title>
-  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main class="container">
     <div class="nf"><div>
-      <img src="/icons/icon-192.png" alt="" width="96" height="96" style="border-radius:22px;margin-bottom:18px">
+      <picture><source srcset="/icons/icon-dark-192.png" media="(prefers-color-scheme: dark)"><img src="/icons/icon-192.png" alt="" width="96" height="96" style="border-radius:22px;margin-bottom:18px"></picture>
       <h1>Sei offline</h1>
       <p>Controlla la connessione: appena torna internet, Appunti del Senato riprende da dove eri rimasto.</p>
       <button class="btn btn-primary" onclick="location.reload()">Riprova</button>

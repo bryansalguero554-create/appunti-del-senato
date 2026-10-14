@@ -24,7 +24,7 @@ export async function renderProfile(app) {
 
     ${isStandalone() ? '' : `
     <div class="card install-card" style="margin-bottom:20px">
-      <img src="/icons/icon-192.png" alt="">
+      <picture><source srcset="/icons/icon-dark-192.png" media="(prefers-color-scheme: dark)"><img src="/icons/icon-192.png" alt=""></picture>
       <div class="grow" style="flex:1"><h2 style="margin:0 0 4px">📱 Installa l'app</h2>
         <p class="muted small" style="margin:0">Metti Appunti del Senato sulla schermata Home di iPhone, iPad o Android: si apre a tutto schermo come un'app.</p></div>
       <button class="btn btn-primary" id="install-app">Installa</button>
