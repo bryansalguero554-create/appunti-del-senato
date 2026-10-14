@@ -1,6 +1,7 @@
 import {
   state, api, esc, timeAgo, formatDate, fileType, formatBytes, toast, toastError, roleBadge, confirmDialog,
 } from '../util.js';
+import { installApp, isStandalone } from '../install.js';
 
 export function deviceName(ua = '') {
   const os = /iPhone|iPad/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows'
@@ -21,6 +22,13 @@ export async function renderProfile(app) {
     <div class="page-head"><div class="titles"><h1>👤 ${esc(u.name)} ${roleBadge(u.role)}</h1>
       <p class="muted">${esc(u.email)} · iscritto dal ${formatDate(u.created_at)}</p></div></div>
 
+    ${isStandalone() ? '' : `
+    <div class="card install-card" style="margin-bottom:20px">
+      <img src="/icons/icon-192.png" alt="">
+      <div class="grow" style="flex:1"><h2 style="margin:0 0 4px">📱 Installa l'app</h2>
+        <p class="muted small" style="margin:0">Metti Appunti del Senato sulla schermata Home di iPhone, iPad o Android: si apre a tutto schermo come un'app.</p></div>
+      <button class="btn btn-primary" id="install-app">Installa</button>
+    </div>`}
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
       <div class="card">
         <h2>🔑 Cambia password</h2>
@@ -62,6 +70,7 @@ export async function renderProfile(app) {
         </a>`).join('')}</div>` : '<p class="muted">Non hai ancora svolto quiz.</p>'}
     </div>`;
 
+  app.querySelector('#install-app')?.addEventListener('click', installApp);
   app.querySelector('#pw-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {

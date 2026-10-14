@@ -8,7 +8,7 @@ export function renderAuth(app, mode, onDone) {
     <div class="auth-wrap">
       <div class="auth-bg" aria-hidden="true"><span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span></div>
       <div class="card auth-card tilt" data-tilt="4">
-        <div class="auth-logo">📚</div>
+        <img class="auth-logo" src="/icons/icon-192.png" alt="" width="84" height="84">
         <h1>${esc(state.site.name || 'Appunti')}</h1>
         <p class="muted" style="text-align:center;margin-bottom:24px">${isLogin ? 'Accedi per studiare con gli appunti condivisi.' : 'Crea il tuo account gratuito.'}</p>
         <div class="alert" id="auth-error" hidden></div>
