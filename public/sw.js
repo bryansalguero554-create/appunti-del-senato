@@ -1,6 +1,6 @@
 // Service worker della web app: rende il sito installabile e mostra l'ultima versione
 // salvata quando manca la connessione. I dati (/api) non vengono mai messi in cache.
-const CACHE = 'appunti-v5';
+const CACHE = 'appunti-v6';
 const SHELL = [
   '/', '/styles.css', '/manifest.webmanifest', '/offline.html',
   '/js/app.js', '/js/util.js', '/js/ai.js', '/js/fx.js', '/js/quizgen.js', '/js/install.js',
