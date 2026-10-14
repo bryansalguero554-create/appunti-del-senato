@@ -33,8 +33,11 @@ export const driveRoot = () => getSetting('drive_root_id') || config.driveRootFo
 export const driveReady = () => driveConnected() && Boolean(driveRoot());
 
 export function redirectUri(req) {
-  const base = config.publicUrl || `${req.protocol}://${req.get('host')}`;
-  return `${base}/api/drive/callback`;
+  if (config.publicUrl) return `${config.publicUrl}/api/drive/callback`;
+  const host = req.get('host');
+  // Google accetta indirizzi http solo per localhost: online (dietro il proxy di Render) si usa sempre https.
+  const local = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?$/.test(host);
+  return `${local ? req.protocol : 'https'}://${host}/api/drive/callback`;
 }
 
 export function authUrl(req, state) {
