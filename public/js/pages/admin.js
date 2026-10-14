@@ -329,6 +329,15 @@ async function drive(body, query) {
         ${steps(2, st.connected, st.connected ? `Collegato all'account <strong>${esc(st.account || 'Google')}</strong>.` : '<button class="btn btn-primary btn-sm" id="drive-connect" ' + (st.configured ? '' : 'disabled') + '>Collega Google Drive</button>')}
         ${steps(3, Boolean(st.rootId), st.rootId ? `Cartella principale: <strong>${esc(st.rootName || st.rootId)}</strong>` : 'Scegli la cartella che contiene le materie.')}
       </div>
+      ${st.connected ? '' : `
+      <div class="explanation" style="margin-top:16px">
+        <strong>Indirizzo da autorizzare su Google</strong><br>
+        <span class="small muted">Google Cloud → Google Auth Platform → Client → il tuo client → "URI di reindirizzamento autorizzati" → Aggiungi URI. Deve essere identico, carattere per carattere:</span>
+        <div class="row" style="margin-top:8px;flex-wrap:nowrap">
+          <input id="redirect-uri" readonly value="${esc(st.redirectUri)}">
+          <button class="btn btn-sm btn-primary" id="copy-redirect" type="button">Copia</button>
+        </div>
+      </div>`}
       ${st.connected ? `
       <form id="root-form" style="margin-top:18px">
         <label>Cartella principale (link di Google Drive)</label>
@@ -403,6 +412,16 @@ async function drive(body, query) {
       toastError(err);
     }
     drive(body);
+  });
+  body.querySelector('#copy-redirect')?.addEventListener('click', async () => {
+    const field = body.querySelector('#redirect-uri');
+    try {
+      await navigator.clipboard.writeText(field.value);
+      toast('Indirizzo copiato');
+    } catch {
+      field.select();
+      toast('Seleziona e copia l\'indirizzo');
+    }
   });
   body.querySelector('#drive-connect')?.addEventListener('click', async () => {
     try {

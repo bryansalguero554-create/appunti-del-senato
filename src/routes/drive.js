@@ -14,7 +14,8 @@ const pendingStates = new Map(); // state OAuth → { sessionId, expires }
 
 adminDrive.use(requireRole('owner'));
 
-adminDrive.get('/', (req, res) => res.json(driveStatus()));
+// redirectUri: l'indirizzo esatto da inserire su Google Cloud in "URI di reindirizzamento autorizzati"
+adminDrive.get('/', (req, res) => res.json({ ...driveStatus(), redirectUri: drive.redirectUri(req) }));
 
 // Il proprietario lo copia in DRIVE_REFRESH_TOKEN sul server, così il collegamento sopravvive ai riavvii.
 adminDrive.get('/token', (req, res) => res.json({ token: getSetting('drive_refresh_token') || '' }));
