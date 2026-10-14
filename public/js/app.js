@@ -4,6 +4,7 @@ import { renderHome } from './pages/home.js';
 import { renderSubject } from './pages/subject.js';
 import { renderTopic } from './pages/topic.js';
 import { renderNote } from './pages/note.js';
+import { renderMap } from './pages/map.js';
 import { renderQuizList, renderQuizTake, renderQuizEditor } from './pages/quiz.js';
 import { renderProfile } from './pages/profile.js';
 import { renderAdmin } from './pages/admin.js';
@@ -17,6 +18,7 @@ const routes = [
   [/^\/materia\/(\d+)$/, renderSubject, 'home'],
   [/^\/argomento\/(\d+)$/, renderTopic, 'home'],
   [/^\/appunto\/(\d+)$/, renderNote, 'home'],
+  [/^\/mappa\/(\d+)$/, renderMap, 'home'],
   [/^\/quiz$/, renderQuizList, 'quiz'],
   [/^\/quiz\/nuovo$/, renderQuizEditor, 'quiz'],
   [/^\/quiz\/(\d+)\/modifica$/, renderQuizEditor, 'quiz'],

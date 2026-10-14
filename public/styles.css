@@ -686,3 +686,59 @@ picture { display: contents; }
   .pdf-scroll { max-height: 72vh; padding: 6px; }
   .pdf-pages { gap: 6px; }
 }
+
+/* ---------- Scheda dell'appunto (più ariosa) ---------- */
+.side-card { display: flex; flex-direction: column; gap: 16px; }
+.note-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.note-meta > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.note-meta span { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.note-meta strong { font-size: .88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.note-actions .btn { justify-content: center; }
+.ai-help { border-radius: 16px; background: var(--surface-2); overflow: hidden; }
+.ai-help summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; font-weight: 600; user-select: none; -webkit-user-select: none; }
+.ai-help summary::-webkit-details-marker { display: none; }
+.ai-help summary img { width: 26px; height: 26px; filter: drop-shadow(0 1px 3px rgb(80 40 160 / .25)); }
+.ai-help summary span:first-of-type { flex: 1; }
+.ai-help .chev { font-size: 1.3rem; color: var(--muted); transition: transform .3s var(--ease); }
+.ai-help[open] .chev { transform: rotate(90deg); }
+.ai-help-list { display: flex; flex-direction: column; padding: 0 6px 6px; animation: drop-in .35s var(--ease); }
+.ai-help-list button { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 10px; border: 0; border-radius: 12px; background: transparent; color: var(--text); font: inherit; cursor: pointer; transition: background .2s; }
+.ai-help-list button:hover, .ai-help-list button:active { background: var(--surface); }
+.ai-help-list .ico { font-size: 1.35rem; width: 32px; text-align: center; flex: none; }
+.ai-help-list strong { display: block; font-size: .9rem; font-weight: 600; }
+.ai-help-list small { display: block; font-size: .76rem; color: var(--muted); margin-top: 1px; }
+.note-maps { display: flex; flex-direction: column; gap: 4px; }
+.note-maps-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 2px; }
+.note-maps a { display: flex; justify-content: space-between; gap: 8px; padding: 9px 12px; border-radius: 12px; background: var(--surface-2); color: var(--text); text-decoration: none; font-size: .88rem; font-weight: 500; }
+.note-maps a span { color: var(--muted); }
+.note-manage { display: flex; justify-content: center; gap: 18px; padding-top: 4px; }
+.link-btn { border: 0; background: none; color: var(--muted); font: inherit; font-size: .85rem; cursor: pointer; padding: 6px 4px; border-radius: 8px; }
+.link-btn:hover { color: var(--text); }
+.link-btn.danger:hover { color: var(--danger); }
+
+/* ---------- Mappa concettuale ---------- */
+.map-layout { display: grid; grid-template-columns: 1fr 300px; gap: 24px; align-items: start; }
+@media (max-width: 960px) { .map-layout { grid-template-columns: 1fr; } }
+.map-card { position: relative; padding: 0; overflow: hidden; }
+.map-scroll { overflow: auto; max-height: 72vh; padding: 8px; background: #fbfbfd; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.map-scroll svg { display: block; margin: 0 auto; }
+.map-scroll .mnode { cursor: pointer; }
+.map-scroll .mnode:hover rect { filter: brightness(1.04); }
+.map-busy { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: color-mix(in srgb, var(--surface) 75%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); font-weight: 600; }
+.map-busy[hidden] { display: none; }
+.map-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 76px; }
+.map-tools { display: flex; flex-direction: column; gap: 12px; }
+.map-tools p { margin: 0; }
+.switch-row { display: flex; align-items: center; gap: 10px; font-weight: 500; font-size: .9rem; cursor: pointer; }
+.switch-row input { width: 20px; height: 20px; accent-color: var(--primary); }
+.map-ai { display: flex; flex-direction: column; gap: 10px; }
+.map-ai-head { display: flex; align-items: center; gap: 8px; }
+.map-ai-head img { width: 26px; height: 26px; }
+.map-ai textarea { resize: vertical; }
+.map-ai-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.map-ai-chips .chip { font-size: .78rem; }
+.map-ai-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.node-actions { flex-wrap: wrap; }
+@media (max-width: 960px) { .map-side { position: static; } }
+@media (max-width: 600px) { .map-scroll { max-height: 64vh; } }

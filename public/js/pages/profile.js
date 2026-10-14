@@ -13,8 +13,8 @@ export function deviceName(ua = '') {
 }
 
 export async function renderProfile(app) {
-  const [{ sessions }, { notes }, { attempts }] = await Promise.all([
-    api('/auth/sessions'), api('/notes/mine'), api('/quizzes/attempts/mine'),
+  const [{ sessions }, { notes }, { attempts }, { maps }] = await Promise.all([
+    api('/auth/sessions'), api('/notes/mine'), api('/quizzes/attempts/mine'), api('/maps'),
   ]);
   const u = state.user;
 
@@ -58,6 +58,16 @@ export async function renderProfile(app) {
           <div class="grow"><div class="title">${esc(n.title)}</div><div class="muted small">${esc(n.subject_name)} › ${esc(n.topic_name)} · ${formatBytes(n.size)}</div></div>
           <span class="muted small">${timeAgo(n.created_at)}</span>
         </a>`).join('')}</div>` : '<p class="muted">Non hai ancora caricato appunti.</p>'}
+    </div>
+
+    <div class="section">
+      <div class="section-head"><h2>🗺️ Le mie mappe (${maps.length})</h2></div>
+      ${maps.length ? `<div class="list">${maps.map((m) => `
+        <a class="list-item" href="#/mappa/${m.id}">
+          <span style="font-size:1.4rem">🗺️</span>
+          <div class="grow"><div class="title">${esc(m.title)}</div><div class="muted small">${m.note_title ? `da ${esc(m.note_title)}` : 'appunto eliminato'}</div></div>
+          <span class="muted small">${timeAgo(m.updated_at)}</span>
+        </a>`).join('')}</div>` : '<p class="muted">Apri un appunto e scegli <strong>Aiuto con l\'IA → Crea mappa per l\'interrogazione</strong>.</p>'}
     </div>
 
     <div class="section">

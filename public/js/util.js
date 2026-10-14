@@ -169,6 +169,50 @@ export function loadPdfJs() {
   return pdfjsPromise;
 }
 
+// ---------- Salvataggio dei file ----------
+
+export const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+/** Il file è pronto ma il tocco è "scaduto" mentre lo si preparava: serve un secondo tocco per salvarlo. */
+function offerSave(file, title) {
+  openModal('File pronto', `<p><strong>${esc(file.name)}</strong> è pronto.</p>
+    <p class="muted small">Tocca il pulsante e scegli <strong>Salva su File</strong> (o <strong>Salva immagine</strong>).</p>
+    <div class="modal-actions"><button class="btn btn-primary" type="button" id="save-file">💾 Salva il file</button></div>`);
+  document.getElementById('save-file').addEventListener('click', async () => {
+    try {
+      await navigator.share({ files: [file], title });
+      closeModal();
+    } catch (err) {
+      if (err.name !== 'AbortError') toastError(err);
+    }
+  });
+}
+
+/**
+ * Salva un file sul dispositivo. Su iPhone/iPad (soprattutto nell'app installata) i download classici non
+ * funzionano: si apre il foglio di condivisione con "Salva su File". Altrove parte un normale download.
+ */
+export async function saveBlob(blob, filename, title = filename, mime = '') {
+  const file = new File([blob], filename, { type: blob.type || mime || 'application/octet-stream' });
+  if (isIOS && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title });
+    } catch (err) {
+      if (err.name === 'NotAllowedError') offerSave(file, title);
+      else if (err.name !== 'AbortError') throw err;
+    }
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+  toast('Download avviato');
+}
+
 // ---------- Modale ----------
 
 export function closeModal() {

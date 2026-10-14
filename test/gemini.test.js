@@ -35,6 +35,21 @@ const mock = http.createServer((req, res) => {
       res.write(`data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: '' }] }, finishReason: 'STOP' }] })}\r\n\r\n`);
       return res.end();
     }
+    if (req.url.includes(':generateContent') && /mappa concettuale/.test(JSON.stringify(JSON.parse(body).contents))) {
+      const edit = /Modificala/.test(body);
+      // l'AI a volte sbaglia: un id ripetuto e un genitore inesistente vengono sistemati dal server
+      const map = { title: 'Rivoluzione francese', nodes: [
+        { id: 'r', parent: '', label: 'Rivoluzione francese', detail: '1789-1799' },
+        { id: 'c', parent: 'r', label: 'Cause', detail: 'Crisi economica e idee illuministe' },
+        { id: 'c1', parent: 'c', label: 'Debito pubblico', detail: '' },
+        { id: 'f', parent: 'r', label: 'Fasi', detail: '' },
+        { id: 'f', parent: 'r', label: 'Doppione', detail: '' },
+        { id: 'x', parent: 'nessuno', label: 'Conseguenze', detail: 'Fine dell\'Ancien Régime' },
+        ...(edit ? [{ id: 'd', parent: 'f', label: '14 luglio 1789', detail: 'Presa della Bastiglia' }] : []),
+      ] };
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(map) }] }, finishReason: 'STOP' }] }));
+    }
     if (req.url.includes(':generateContent')) {
       const quiz = { title: 'Quiz Gemini', description: 'ok', questions: [
         { question: 'Anno della presa della Bastiglia?', options: ['1789', '1815', '1492', '1848'], correct_index: 0, explanation: '14 luglio 1789' },
@@ -151,4 +166,65 @@ test('se un modello ha la quota esaurita si passa da solo a un altro', async () 
   } finally {
     failModel = null;
   }
+});
+
+test('mappe concettuali: create e modificate con l\'AI, modificabili a mano e personali', async () => {
+  const subjects = await (await call('GET', '/api/subjects')).json();
+  const topic = await (await call('POST', `/api/subjects/${subjects.subjects[0].id}/topics`, { name: 'Mappe' })).json();
+  const form = new FormData();
+  form.append('files', new Blob(['La Rivoluzione francese iniziò nel 1789.'], { type: 'text/plain' }), 'rivoluzione.txt');
+  const up = await (await call('POST', `/api/topics/${topic.topic.id}/notes`, undefined, form)).json();
+  const noteId = up.ids[0];
+
+  let res = await call('POST', '/api/ai/map', { noteId, instructions: 'solo le date' });
+  let data = await res.json();
+  assert.equal(res.status, 201, JSON.stringify(data));
+  const prompt = requests.filter((r) => r.url.includes(':generateContent') && !r.url.includes('stream')).at(-1).body;
+  assert.match(prompt.contents[0].parts.at(-1).text, /mappa concettuale per preparare un'interrogazione/);
+  assert.match(prompt.contents[0].parts.at(-1).text, /solo le date/);
+  assert.ok(prompt.contents[0].parts.some((p) => /1789/.test(p.text || '')), 'appunto allegato');
+  assert.equal(prompt.generationConfig.responseSchema.properties.nodes.type, 'ARRAY');
+
+  const mapId = data.id;
+  let map = (await (await call('GET', `/api/maps/${mapId}`)).json()).map;
+  assert.equal(map.title, 'Rivoluzione francese');
+  assert.equal(map.note_id, noteId);
+  assert.equal(map.nodes.length, 5, 'id doppio scartato');
+  assert.equal(map.nodes[0].parent, '', 'una sola radice, per prima');
+  assert.equal(map.nodes.filter((n) => !n.parent).length, 1);
+  assert.equal(map.nodes.find((n) => n.label === 'Conseguenze').parent, map.nodes[0].id, 'genitore inesistente → radice');
+
+  res = await call('POST', `/api/ai/map/${mapId}/edit`, { instruction: 'aggiungi la presa della Bastiglia' });
+  data = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(data));
+  assert.ok(data.map.nodes.some((n) => n.label === '14 luglio 1789'));
+  const editPrompt = requests.filter((r) => r.url.includes(':generateContent') && !r.url.includes('stream')).at(-1).body.contents[0].parts.at(-1).text;
+  assert.match(editPrompt, /aggiungi la presa della Bastiglia/);
+  assert.match(editPrompt, /"label":"Cause"/, 'mappa attuale inviata all\'AI');
+
+  // modifica a mano: un ciclo viene spezzato e ricollegato alla radice
+  const nodes = data.map.nodes.map((n) => (n.label === 'Cause' ? { ...n, label: 'Cause principali' } : n));
+  const deb = nodes.find((n) => n.label === 'Debito pubblico');
+  const cause = nodes.find((n) => n.label === 'Cause principali');
+  cause.parent = deb.id;
+  res = await call('PUT', `/api/maps/${mapId}`, { title: 'La Rivoluzione', nodes });
+  data = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(data));
+  assert.equal(data.map.title, 'La Rivoluzione');
+  const fixed = data.map.nodes.find((n) => n.label === 'Cause principali');
+  assert.equal(fixed.parent, data.map.nodes[0].id);
+
+  const list = await (await call('GET', `/api/maps?noteId=${noteId}`)).json();
+  assert.deepEqual(list.maps.map((m) => m.id), [mapId]);
+
+  // un altro studente non vede la mappa
+  const saved = cookie;
+  cookie = '';
+  await call('POST', '/api/auth/register', { name: 'Bea', email: 'bea@t.local', password: 'BeaPass1234' });
+  assert.equal((await call('GET', `/api/maps/${mapId}`)).status, 404);
+  assert.equal((await call('DELETE', `/api/maps/${mapId}`)).status, 404);
+  cookie = saved;
+
+  assert.equal((await call('DELETE', `/api/maps/${mapId}`)).status, 200);
+  assert.equal((await call('GET', `/api/maps/${mapId}`)).status, 404);
 });

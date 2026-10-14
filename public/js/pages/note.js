@@ -1,9 +1,11 @@
 import {
   state, api, esc, formatBytes, formatDate, fileType, openModal, confirmDialog, toast, toastError,
-  setAiContext, renderMarkdown, sanitize, loadScript, spinner, loadPdfJs, closeModal,
+  setAiContext, renderMarkdown, sanitize, loadScript, spinner, loadPdfJs, saveBlob,
 } from '../util.js';
 import { openAi } from '../ai.js';
+import { addZoomBar } from '../zoom.js';
 import { openQuizGenerator } from '../quizgen.js';
+import { openMapGenerator } from '../mapgen.js';
 
 // SheetJS non è più pubblicato su npm: viene caricato dal suo CDN ufficiale solo quando serve.
 const SHEETJS_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
@@ -36,82 +38,6 @@ function decodeHtml(buffer) {
   } catch {
     return new TextDecoder('utf-8').decode(buffer);
   }
-}
-
-// ---------- Zoom ----------
-// Livello 1 = "Adatta": la pagina intera entra in larghezza. I tasti ingrandiscono o riducono rispetto a quello.
-const ZOOM_STEPS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4];
-
-const ZMIN = ZOOM_STEPS[0];
-const ZMAX = ZOOM_STEPS.at(-1);
-
-/**
- * Barra dello zoom (tasti − / Pagina intera / +) e zoom con due dita o con il trackpad su "surface".
- * Restituisce set(z) per aggiornare lo zoom dall'esterno.
- */
-function addZoomBar(el, apply, surface) {
-  let z = 1;
-  const bar = document.createElement('div');
-  bar.className = 'zoom-bar';
-  bar.innerHTML = `<button type="button" data-z="out" aria-label="Riduci">−</button>
-    <button type="button" data-z="fit" class="zoom-level" title="Torna alla pagina intera">Pagina intera</button>
-    <button type="button" data-z="in" aria-label="Ingrandisci">+</button>`;
-  const label = bar.querySelector('.zoom-level');
-  const set = (v, anchor) => {
-    v = Math.min(ZMAX, Math.max(ZMIN, v));
-    if (Math.abs(v - 1) < 0.04) v = 1; // vicino alla pagina intera: si aggancia
-    // il punto sotto le dita resta fermo mentre si ingrandisce
-    let keep;
-    if (surface && anchor) {
-      const r = surface.getBoundingClientRect();
-      const ax = anchor.x - r.left;
-      const ay = anchor.y - r.top;
-      keep = { ax, ay, rx: (surface.scrollLeft + ax) / surface.scrollWidth, ry: (surface.scrollTop + ay) / surface.scrollHeight };
-    }
-    z = v;
-    label.textContent = z === 1 ? 'Pagina intera' : `${Math.round(z * 100)}%`;
-    bar.querySelector('[data-z="out"]').disabled = z <= ZOOM_STEPS[0];
-    bar.querySelector('[data-z="in"]').disabled = z >= ZOOM_STEPS.at(-1);
-    apply(z);
-    if (keep) {
-      surface.scrollLeft = keep.rx * surface.scrollWidth - keep.ax;
-      surface.scrollTop = keep.ry * surface.scrollHeight - keep.ay;
-    }
-  };
-  bar.addEventListener('click', (e) => {
-    const k = e.target.closest('[data-z]')?.dataset.z;
-    if (k === 'fit') set(1);
-    else if (k === 'in') set(ZOOM_STEPS.find((v) => v > z + 1e-3) ?? z);
-    else if (k === 'out') set([...ZOOM_STEPS].reverse().find((v) => v < z - 1e-3) ?? z);
-  });
-  el.prepend(bar);
-  if (surface) enablePinch(surface, () => z, set);
-  return set;
-}
-
-function enablePinch(surface, get, set) {
-  let start = null;
-  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-  const mid = (t) => ({ x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 });
-  surface.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 2) return;
-    e.preventDefault(); // il secondo dito: il gesto diventa uno zoom, non uno scorrimento
-    start = { d: dist(e.touches) || 1, z: get() };
-  }, { passive: false });
-  surface.addEventListener('touchmove', (e) => {
-    if (!start || e.touches.length !== 2) return;
-    e.preventDefault(); // ingrandisce l'appunto, non tutta la pagina
-    set(start.z * (dist(e.touches) / start.d), mid(e.touches));
-  }, { passive: false });
-  surface.addEventListener('touchend', (e) => { if (e.touches.length < 2) start = null; });
-  surface.addEventListener('touchcancel', () => { start = null; });
-  surface.addEventListener('gesturestart', (e) => e.preventDefault()); // Safari
-  // trackpad del computer (pizzico = rotella con Ctrl)
-  surface.addEventListener('wheel', (e) => {
-    if (!e.ctrlKey) return;
-    e.preventDefault();
-    set(get() * Math.exp(-e.deltaY * 0.01), { x: e.clientX, y: e.clientY });
-  }, { passive: false });
 }
 
 // Script aggiunto alle pagine HTML: le rimpicciolisce finché entrano in larghezza, poi applica lo zoom scelto.
@@ -234,31 +160,7 @@ function addContentZoom(el) {
   if (content) addZoomBar(el, (z) => { content.style.zoom = z === 1 ? '' : String(z); }, content);
 }
 
-// ---------- Download ----------
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-const shareFile = (file, note) => navigator.share({ files: [file], title: note.title });
-
-/** Il file è pronto ma il tocco è "scaduto" durante lo scaricamento: serve un secondo tocco per salvarlo. */
-function offerSave(file, note) {
-  openModal('File pronto', `<p><strong>${esc(note.original_name)}</strong> è pronto.</p>
-    <p class="muted small">Tocca il pulsante e scegli <strong>Salva su File</strong> (o <strong>Salva immagine</strong>).</p>
-    <div class="modal-actions"><button class="btn btn-primary" type="button" id="save-file">💾 Salva il file</button></div>`);
-  document.getElementById('save-file').addEventListener('click', async () => {
-    try {
-      await shareFile(file, note);
-      closeModal();
-    } catch (err) {
-      if (err.name !== 'AbortError') toastError(err);
-    }
-  });
-}
-
-/**
- * Scarica il file dell'appunto. Su iPhone/iPad (soprattutto nell'app installata) i link di download non
- * funzionano: il file si scarica dal sito e si apre il foglio di condivisione con "Salva su File".
- * Altrove si avvia un normale download.
- */
+/** Scarica il file dell'appunto (su iPhone/iPad con il foglio di condivisione, vedi saveBlob). */
 async function downloadNote(note, btn) {
   if (btn.dataset.busy) return;
   btn.dataset.busy = '1';
@@ -267,25 +169,7 @@ async function downloadNote(note, btn) {
   try {
     const res = await fetch(`/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}?download=1`);
     if (!res.ok) throw new Error(res.status === 404 ? 'Il file non è più disponibile sul server.' : `Download non riuscito (errore ${res.status}).`);
-    const blob = await res.blob();
-    const file = new File([blob], note.original_name, { type: blob.type || note.mime || 'application/octet-stream' });
-    if (isIOS && navigator.canShare?.({ files: [file] })) {
-      try {
-        await shareFile(file, note);
-      } catch (err) {
-        if (err.name === 'NotAllowedError') offerSave(file, note);
-        else if (err.name !== 'AbortError') throw err;
-      }
-      return;
-    }
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = note.original_name;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
-    toast('Download avviato');
+    await saveBlob(await res.blob(), note.original_name, note.title, note.mime);
   } catch (err) {
     toastError(err);
   } finally {
@@ -427,20 +311,31 @@ export async function renderNote(app, { params: [id] }) {
     <div class="viewer-layout">
       <div class="viewer" id="viewer"></div>
       <aside class="card side-card">
-        <div class="meta-row"><span class="muted">Autore</span><strong>${esc(note.author_name || 'utente eliminato')}</strong></div>
-        <div class="meta-row"><span class="muted">Formato</span><span>${type.label} (.${esc(note.ext || '?')})</span></div>
-        <div class="meta-row"><span class="muted">Dimensione</span><span>${formatBytes(note.size)}</span></div>
-        <div class="meta-row"><span class="muted">Caricato</span><span>${formatDate(note.created_at)}</span></div>
-        ${note.fromDrive ? '<div class="meta-row"><span class="muted">Origine</span><span>☁️ Google Drive</span></div>' : ''}
-        <div class="actions">
-          <button class="btn btn-primary" id="fullscreen">⤢ Schermo intero</button>
-          <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}" target="_blank" rel="noopener">↗️ Apri in una nuova scheda</a>
-          <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}?download=1" data-download>⬇️ Scarica</a>
-          ${state.site.aiEnabled ? `<button class="btn" id="ai-explain">🤖 Spiegami questo appunto</button>
-          <button class="btn" id="ai-ask">💬 Ho un dubbio</button>
-          <button class="btn" id="gen-quiz">✨ Genera quiz da questo appunto</button>` : ''}
-          ${note.canManage ? '<button class="btn" id="edit-note">✏️ Modifica</button><button class="btn btn-danger" id="delete-note">🗑️ Elimina</button>' : ''}
+        <div class="note-meta">
+          <div><span>Autore</span><strong>${esc(note.author_name || 'utente eliminato')}</strong></div>
+          <div><span>Formato</span><strong>${type.label} · ${formatBytes(note.size)}</strong></div>
+          <div><span>Caricato</span><strong>${formatDate(note.created_at)}</strong></div>
+          ${note.fromDrive ? '<div><span>Origine</span><strong>☁️ Google Drive</strong></div>' : ''}
         </div>
+        <div class="note-actions">
+          <button class="btn btn-primary" id="fullscreen">⤢ Schermo intero</button>
+          <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}?download=1" data-download>⬇️ Scarica</a>
+        </div>
+        ${state.site.aiEnabled ? `
+        <details class="ai-help">
+          <summary><img src="/icons/ai-64.png" alt="" aria-hidden="true"><span>Aiuto con l'IA</span><span class="chev" aria-hidden="true">›</span></summary>
+          <div class="ai-help-list">
+            <button type="button" id="gen-map"><span class="ico">🗺️</span><span><strong>Crea mappa per l'interrogazione</strong><small>Mappa concettuale modificabile e scaricabile</small></span></button>
+            <button type="button" id="ai-explain"><span class="ico">🤖</span><span><strong>Spiegami questo appunto</strong><small>I concetti principali, in modo semplice</small></span></button>
+            <button type="button" id="ai-ask"><span class="ico">💬</span><span><strong>Ho un dubbio</strong><small>Chiedi all'assistente</small></span></button>
+            <button type="button" id="gen-quiz"><span class="ico">✨</span><span><strong>Genera un quiz</strong><small>Mettiti alla prova su questo appunto</small></span></button>
+          </div>
+        </details>` : ''}
+        <div class="note-maps" id="note-maps" hidden></div>
+        ${note.canManage ? `<div class="note-manage">
+          <button type="button" class="link-btn" id="edit-note">✏️ Modifica</button>
+          <button type="button" class="link-btn danger" id="delete-note">🗑️ Elimina</button>
+        </div>` : ''}
       </aside>
     </div>`;
 
@@ -475,6 +370,22 @@ export async function renderNote(app, { params: [id] }) {
   app.querySelector('#ai-explain')?.addEventListener('click', () => openAi('Spiegami in modo semplice e ordinato i concetti principali di questo appunto, poi fammi un breve riassunto finale.'));
   app.querySelector('#ai-ask')?.addEventListener('click', () => openAi());
   app.querySelector('#gen-quiz')?.addEventListener('click', () => openQuizGenerator({ noteId: note.id, noteTitle: note.title }));
+  app.querySelector('#gen-map')?.addEventListener('click', () => openMapGenerator({ noteId: note.id, noteTitle: note.title }));
+
+  // la tendina "Aiuto con l'IA" resta aperta o chiusa come l'ha lasciata lo studente
+  const help = app.querySelector('.ai-help');
+  if (help) {
+    try { help.open = localStorage.getItem('ai-help-open') === '1'; } catch { /* modalità privata */ }
+    help.addEventListener('toggle', () => { try { localStorage.setItem('ai-help-open', help.open ? '1' : '0'); } catch { /* */ } });
+  }
+
+  // mappe già create per questo appunto
+  api(`/maps?noteId=${note.id}`).then(({ maps }) => {
+    const box = app.querySelector('#note-maps');
+    if (!box || !maps.length) return;
+    box.innerHTML = `<div class="note-maps-title">🗺️ Le tue mappe</div>${maps.map((m) => `<a href="#/mappa/${m.id}">${esc(m.title)}<span>›</span></a>`).join('')}`;
+    box.hidden = false;
+  }).catch(() => {});
   app.querySelector('#edit-note')?.addEventListener('click', () => {
     openModal('Modifica appunto', `
       <form>
