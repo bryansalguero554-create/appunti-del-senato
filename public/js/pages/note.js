@@ -118,6 +118,7 @@ export async function renderNote(app, { params: [id] }) {
         <div class="meta-row"><span class="muted">Formato</span><span>${type.label} (.${esc(note.ext || '?')})</span></div>
         <div class="meta-row"><span class="muted">Dimensione</span><span>${formatBytes(note.size)}</span></div>
         <div class="meta-row"><span class="muted">Caricato</span><span>${formatDate(note.created_at)}</span></div>
+        ${note.fromDrive ? '<div class="meta-row"><span class="muted">Origine</span><span>☁️ Google Drive</span></div>' : ''}
         <div class="actions">
           <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}" target="_blank" rel="noopener">↗️ Apri in una nuova scheda</a>
           <a class="btn" href="/api/notes/${note.id}/file/${encodeURIComponent(note.original_name)}?download=1">⬇️ Scarica</a>

@@ -13,6 +13,7 @@ const TABS = [
   ['sessions', '🔐 Sessioni'],
   ['users', '👥 Utenti'],
   ['content', '🗂️ Contenuti'],
+  ['drive', '☁️ Google Drive'],
   ['settings', '⚙️ Impostazioni'],
 ];
 
@@ -33,8 +34,8 @@ export async function renderAdmin(app, { query }) {
     <div id="tab-body">${spinner()}</div>`;
 
   const body = app.querySelector('#tab-body');
-  const views = { overview, online, sessions, users, content, settings };
-  await views[active](body);
+  const views = { overview, online, sessions, users, content, drive, settings };
+  await views[active](body, query);
 }
 
 // ---------- Panoramica ----------
@@ -47,16 +48,16 @@ function bars(series) {
   }
   const map = new Map(series.map((r) => [r.day, r.n]));
   const max = Math.max(1, ...days.map((d) => map.get(d) || 0));
-  return `<div class="bars">${days.map((d) => {
+  return `<div class="bars">${days.map((d, i) => {
     const n = map.get(d) || 0;
-    return `<div class="bar" style="height:${(n / max) * 100}%" title="${d}: ${n}">${n ? `<span>${n}</span>` : ''}</div>`;
+    return `<div class="bar" style="height:${(n / max) * 100}%;--i:${i}" title="${d}: ${n}">${n ? `<span>${n}</span>` : ''}</div>`;
   }).join('')}</div>
   <div class="bars-labels">${days.map((d, i) => `<span>${i % 2 ? '' : d.slice(8)}</span>`).join('')}</div>`;
 }
 
 async function overview(body) {
   const s = await api('/admin/stats');
-  const stat = (value, label) => `<div class="card stat"><div class="value">${value}</div><div class="label">${label}</div></div>`;
+  const stat = (value, label) => `<div class="card stat tilt" data-tilt="8"><div class="value">${value}</div><div class="label">${label}</div></div>`;
   body.innerHTML = `
     <div class="stat-grid">
       ${stat(`<span class="live-dot"></span>${s.onlineUsers}`, `utenti online ora${s.onlineGuests ? ` (+${s.onlineGuests} ospiti)` : ''}`)}
@@ -301,6 +302,108 @@ async function content(body) {
     await api(`/notes/${btn.dataset.del}`, { method: 'DELETE' });
     btn.closest('tr').remove();
     toast('Appunto eliminato');
+  });
+}
+
+// ---------- Google Drive ----------
+
+async function drive(body, query) {
+  const st = await api('/admin/drive');
+  const esito = query?.get('esito');
+  if (esito) {
+    if (esito === 'ok') toast('Google Drive collegato!');
+    else toast(esito, 'error');
+    history.replaceState(null, '', '#/admin?tab=drive');
+  }
+  const r = st.lastResult;
+  const steps = (n, done, html) => `<div class="list-item"><span class="badge ${done ? 'badge-online' : ''}" style="min-width:28px;justify-content:center">${done ? '✓' : n}</span><div class="grow">${html}</div></div>`;
+
+  body.innerHTML = `
+    <div class="card" style="max-width:760px">
+      <h2>☁️ Sincronizzazione con Google Drive</h2>
+      <p class="muted">Le materie e gli argomenti del sito diventano le cartelle del tuo Drive: <strong>Cartella principale › Materia › Argomento › file</strong>.
+        Quello che aggiungi nel Drive compare sul sito (ogni ${st.intervalMinutes} minuti o subito con "Sincronizza ora"), e gli appunti caricati sul sito finiscono nella cartella giusta del Drive.
+        I Documenti, le Presentazioni e i Fogli Google vengono mostrati come PDF/Excel.</p>
+      <div class="list" style="margin-top:18px">
+        ${steps(1, st.configured, st.configured ? 'Credenziali Google configurate sul server.' : 'Imposta <code>GOOGLE_CLIENT_ID</code> e <code>GOOGLE_CLIENT_SECRET</code> sul server (guida nel README, sezione "Google Drive").')}
+        ${steps(2, st.connected, st.connected ? `Collegato all'account <strong>${esc(st.account || 'Google')}</strong>.` : '<button class="btn btn-primary btn-sm" id="drive-connect" ' + (st.configured ? '' : 'disabled') + '>Collega Google Drive</button>')}
+        ${steps(3, Boolean(st.rootId), st.rootId ? `Cartella principale: <strong>${esc(st.rootName || st.rootId)}</strong>` : 'Scegli la cartella che contiene le materie.')}
+      </div>
+      ${st.connected ? `
+      <form id="root-form" style="margin-top:18px">
+        <label>Cartella principale (link di Google Drive)</label>
+        <div class="row" style="flex-wrap:nowrap">
+          <input name="folder" placeholder="https://drive.google.com/drive/folders/…" value="${st.rootId ? `https://drive.google.com/drive/folders/${esc(st.rootId)}` : ''}">
+          <button class="btn btn-primary" type="submit">${st.rootId ? 'Cambia' : 'Usa questa cartella'}</button>
+        </div>
+        <div id="folder-picker" class="chips" style="margin-top:10px"><button type="button" class="btn btn-sm btn-ghost" id="load-folders">Mostra le cartelle del mio Drive</button></div>
+      </form>` : ''}
+      ${st.rootId && st.connected ? `
+      <div class="row" style="margin-top:22px">
+        <button class="btn btn-primary" id="drive-sync">🔄 Sincronizza ora</button>
+        <span class="muted small">${st.lastSync ? `Ultima sincronizzazione ${timeAgo(st.lastSync)}` : 'Mai sincronizzato'}</span>
+        <span class="spacer"></span>
+        <button class="btn btn-danger btn-sm" id="drive-disconnect">Scollega</button>
+      </div>
+      ${r ? `<p class="small muted" style="margin-top:12px">Ultimo risultato: ${r.subjects} materie, ${r.topics} argomenti e ${r.notes} appunti nuovi · ${r.updated} aggiornati · ${r.removed} rimossi · ${r.pushed} inviati al Drive${r.skipped ? ` · ${r.skipped} file saltati (non supportati o troppo grandi)` : ''}.</p>
+        ${(r.warnings || []).map((w) => `<p class="small" style="color:var(--gold)">⚠️ ${esc(w)}</p>`).join('')}` : ''}` : ''}
+      ${st.lastError ? `<p class="small" style="color:var(--danger);margin-top:12px">Ultimo errore: ${esc(st.lastError)}</p>` : ''}
+    </div>`;
+
+  body.querySelector('#drive-connect')?.addEventListener('click', async () => {
+    try {
+      const { url } = await api('/admin/drive/connect');
+      location.href = url;
+    } catch (err) {
+      toastError(err);
+    }
+  });
+  body.querySelector('#root-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('[type=submit]');
+    btn.disabled = true;
+    btn.textContent = 'Sincronizzazione…';
+    try {
+      const { folder } = await api('/admin/drive/root', { method: 'POST', body: { folder: new FormData(e.target).get('folder') } });
+      toast(`Cartella "${folder.name}" collegata e sincronizzata`);
+    } catch (err) {
+      toastError(err);
+    }
+    drive(body);
+  });
+  body.querySelector('#load-folders')?.addEventListener('click', async (e) => {
+    const picker = body.querySelector('#folder-picker');
+    e.target.disabled = true;
+    try {
+      const { folders } = await api('/admin/drive/folders');
+      picker.innerHTML = folders.map((f) => `<button type="button" class="chip" data-id="${esc(f.id)}">📁 ${esc(f.name)}</button>`).join('') || '<span class="muted small">Nessuna cartella nel Drive.</span>';
+      picker.addEventListener('click', (ev) => {
+        const chip = ev.target.closest('[data-id]');
+        if (!chip) return;
+        body.querySelector('[name=folder]').value = `https://drive.google.com/drive/folders/${chip.dataset.id}`;
+        picker.querySelectorAll('.chip').forEach((c) => c.classList.toggle('active', c === chip));
+      });
+    } catch (err) {
+      toastError(err);
+      e.target.disabled = false;
+    }
+  });
+  body.querySelector('#drive-sync')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Sincronizzazione…';
+    try {
+      const { stats } = await api('/admin/drive/sync', { method: 'POST' });
+      toast(`Sincronizzato: ${stats.notes} nuovi appunti, ${stats.removed} rimossi`);
+    } catch (err) {
+      toastError(err);
+    }
+    drive(body);
+  });
+  body.querySelector('#drive-disconnect')?.addEventListener('click', async () => {
+    if (!(await confirmDialog('Scollegare Google Drive? Materie e appunti restano sul sito, ma non saranno più sincronizzati.', { confirmLabel: 'Scollega' }))) return;
+    await api('/admin/drive/disconnect', { method: 'POST' });
+    toast('Google Drive scollegato');
+    drive(body);
   });
 }
 

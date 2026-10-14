@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <title>Appunti del Senato</title>
   <meta name="description" content="Piattaforma di studio con appunti condivisi, quiz e assistente AI.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
@@ -30,7 +32,7 @@
   <div class="announcement" id="announcement" hidden></div>
   <main id="app" class="container"></main>
 
-  <button class="ai-fab" id="ai-fab" hidden aria-label="Chiedi all'assistente AI">🤖 <span>Chiedi all'AI</span></button>
+  <button class="ai-fab" id="ai-fab" hidden aria-label="Chiedi all'assistente AI"><span class="ai-orb"></span> <span>Chiedi all'AI</span></button>
   <aside class="ai-drawer" id="ai-drawer" aria-hidden="true">
     <div class="ai-head">
       <div>

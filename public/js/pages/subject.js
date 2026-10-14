@@ -32,18 +32,15 @@ export async function renderSubject(app, { params: [id] }) {
     ${topics.length ? `<div class="grid">${topics.map((t) => {
       const formats = (t.formats || '').split(',').filter(Boolean);
       return `
-      <a class="card folder-card" href="#/argomento/${t.id}">
-        <div class="folder-top">
-          <span class="folder-icon">📁</span>
-          <div style="min-width:0">
-            <h3 style="margin:0">${esc(t.name)}</h3>
-            <div class="muted small">${t.note_count} appunti · ${t.contributor_count} autori${t.quiz_count ? ` · ${t.quiz_count} quiz` : ''}</div>
-          </div>
-        </div>
-        ${t.description ? `<p class="muted small" style="margin:0">${esc(t.description)}</p>` : ''}
-        ${t.preview.length ? `<ul class="folder-preview">${t.preview.map((n) => `<li>${fileType(n.ext).icon} ${esc(n.title)}</li>`).join('')}</ul>` : '<p class="muted small" style="margin:8px 0 0">Cartella vuota: carica il primo appunto!</p>'}
+      <a class="card folder-card tilt" href="#/argomento/${t.id}" style="--accent:${esc(subject.color)}">
+        <span class="card-arrow" aria-hidden="true">›</span>
+        <div class="folder3d pop" aria-hidden="true"><div class="f-back"></div><div class="f-paper"></div><div class="f-paper p2"></div><div class="f-front"></div></div>
+        <h3 class="pop-sm">${esc(t.name)}</h3>
+        <div class="muted small">${t.note_count} appunti · ${t.contributor_count} ${t.contributor_count === 1 ? 'autore' : 'autori'}${t.quiz_count ? ` · ${t.quiz_count} quiz` : ''}</div>
+        ${t.description ? `<p class="muted small" style="margin:8px 0 0">${esc(t.description)}</p>` : ''}
+        ${t.preview.length ? `<ul class="folder-preview">${t.preview.map((n) => `<li>${fileType(n.ext).icon} ${esc(n.title)}</li>`).join('')}</ul>` : '<p class="muted small" style="margin:12px 0 0">Cartella vuota: carica il primo appunto!</p>'}
         ${formats.length ? `<div class="badges">${formats.map((f) => `<span class="badge">${esc(f)}</span>`).join('')}</div>` : ''}
-        ${t.last_note_at ? `<div class="muted small" style="margin-top:8px">Aggiornato ${timeAgo(t.last_note_at)}</div>` : ''}
+        ${t.last_note_at ? `<div class="muted small" style="margin-top:10px">Aggiornato ${timeAgo(t.last_note_at)}</div>` : ''}
       </a>`;
     }).join('')}</div>`
     : emptyState('📂', 'Nessun argomento in questa materia. Crea la prima cartella (es. "Modulo 1").')}

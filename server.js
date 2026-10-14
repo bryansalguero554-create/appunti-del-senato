@@ -10,6 +10,8 @@ import contentRoutes from './src/routes/content.js';
 import quizRoutes from './src/routes/quizzes.js';
 import aiRoutes from './src/routes/ai.js';
 import adminRoutes from './src/routes/admin.js';
+import { adminDrive, driveCallback } from './src/routes/drive.js';
+import { startAutoSync } from './src/sync.js';
 
 const app = express();
 if (config.trustProxy) app.set('trust proxy', 1);
@@ -25,6 +27,8 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '1mb' }));
 app.use(checkOrigin);
 app.use(loadSession);
+
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Presenza in tempo reale: ogni pagina aperta invia un ping periodico.
 app.post('/api/presence', (req, res) => {
@@ -54,7 +58,9 @@ app.post('/api/presence', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/admin/drive', adminDrive);
 app.use('/api/admin', adminRoutes);
+app.use('/api/drive', driveCallback);
 app.use('/api', contentRoutes);
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Risorsa non trovata.' }));
@@ -74,8 +80,9 @@ app.get('/vendor/:file', (req, res, next) => {
   res.sendFile(path.join(config.root, 'node_modules', rel));
 });
 
-app.use(express.static(path.join(config.root, 'public'), { index: 'index.html', extensions: ['html'] }));
-app.get('/{*path}', (req, res) => res.sendFile(path.join(config.root, 'public', 'index.html')));
+app.use(express.static(path.join(config.root, 'public'), { index: 'index.html' }));
+// L'app usa URL con "#": qualsiasi altro percorso non esiste e mostra la pagina 404 personalizzata.
+app.use((req, res) => res.status(404).sendFile(path.join(config.root, 'public', '404.html')));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
@@ -85,7 +92,9 @@ app.use((err, req, res, next) => {
 });
 
 await ensureOwner();
+startAutoSync();
 app.listen(config.port, () => {
   console.log(`📚 Sito di studio avviato su http://localhost:${config.port}`);
   if (!config.aiEnabled) console.log('ℹ️  Assistente AI disattivato: imposta ANTHROPIC_API_KEY per attivarlo.');
+  if (!config.googleClientId) console.log('ℹ️  Sincronizzazione Google Drive disattivata: imposta GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET.');
 });
