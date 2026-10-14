@@ -89,7 +89,7 @@ before(async () => {
       ...process.env, PORT: String(port), DATA_DIR: path.join(tmp, 'd'), UPLOAD_DIR: path.join(tmp, 'u'),
       OWNER_EMAIL: 'o@t.local', OWNER_PASSWORD: 'OwnerPass123', ANTHROPIC_API_KEY: '',
       GOOGLE_CLIENT_ID: 'cid', GOOGLE_CLIENT_SECRET: 'secret', DRIVE_REFRESH_TOKEN: 'refresh',
-      GOOGLE_API_BASE: mockUrl, GOOGLE_TOKEN_URL: `${mockUrl}/token`, DRIVE_SYNC_MINUTES: '60',
+      GOOGLE_API_BASE: mockUrl, GOOGLE_TOKEN_URL: `${mockUrl}/token`, DRIVE_SYNC_MINUTES: '60', SEED_DEFAULT_SUBJECTS: 'false',
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   });

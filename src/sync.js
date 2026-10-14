@@ -84,7 +84,7 @@ function linkFolder(table, folder, parent) {
   let row = db.prepare(`SELECT * FROM ${table} WHERE drive_id = ?`).get(folder.id);
   if (!row) {
     // una materia/argomento creato sul sito con lo stesso nome viene collegato invece di duplicarlo
-    row = db.prepare(`SELECT * FROM ${table} WHERE drive_id IS NULL AND name = ? ${parentCol ? `AND ${parentCol} = ?` : ''}`)
+    row = db.prepare(`SELECT * FROM ${table} WHERE drive_id IS NULL AND name = ? COLLATE NOCASE ${parentCol ? `AND ${parentCol} = ?` : ''}`)
       .get(...[folder.name, ...(parentCol ? [parent] : [])]);
     if (row) db.prepare(`UPDATE ${table} SET drive_id = ? WHERE id = ?`).run(folder.id, row.id);
   }

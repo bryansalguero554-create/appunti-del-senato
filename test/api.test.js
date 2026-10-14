@@ -70,9 +70,18 @@ test('registrazione, login e protezione email del proprietario', async () => {
   assert.equal(r.data.user.role, 'owner');
 });
 
+test('materie predefinite create al primo avvio', async () => {
+  const { data } = await alice.get('/api/subjects');
+  const names = data.subjects.map((s) => s.name);
+  assert.equal(names.length, 10);
+  for (const n of ['Storia', 'Filosofia', 'Scienze umane', 'Fisica', 'Italiano', 'Spagnolo', 'Inglese', 'Matematica', 'Diritto', "Storia dell'arte"]) {
+    assert.ok(names.includes(n), n);
+  }
+});
+
 test('materie e argomenti con permessi', async () => {
   assert.equal((await alice.post('/api/subjects', { name: 'Storia' })).status, 403);
-  let r = await owner.post('/api/subjects', { name: 'Storia', icon: '🏛️', color: '#aa3311' });
+  let r = await owner.post('/api/subjects', { name: 'Latino', icon: '🏺', color: '#aa3311' });
   assert.equal(r.status, 201);
   subjectId = r.data.subject.id;
   r = await alice.post(`/api/subjects/${subjectId}/topics`, { name: 'Modulo 1' });

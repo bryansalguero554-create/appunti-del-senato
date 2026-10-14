@@ -27,6 +27,7 @@ export const config = {
   aiModel: env.AI_MODEL || 'claude-opus-5-5',
   aiEnabled: Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN),
   aiDailyLimit: Number(env.AI_DAILY_LIMIT) || 100,
+  seedDefaultSubjects: env.SEED_DEFAULT_SUBJECTS !== 'false',
   publicUrl: (env.PUBLIC_URL || '').replace(/\/+$/, ''),
   googleClientId: env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: env.GOOGLE_CLIENT_SECRET || '',

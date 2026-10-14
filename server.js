@@ -12,6 +12,7 @@ import aiRoutes from './src/routes/ai.js';
 import adminRoutes from './src/routes/admin.js';
 import { adminDrive, driveCallback } from './src/routes/drive.js';
 import { startAutoSync } from './src/sync.js';
+import { seedDefaultSubjects } from './src/seed.js';
 
 const app = express();
 if (config.trustProxy) app.set('trust proxy', 1);
@@ -92,6 +93,7 @@ app.use((err, req, res, next) => {
 });
 
 await ensureOwner();
+seedDefaultSubjects();
 startAutoSync();
 app.listen(config.port, () => {
   console.log(`📚 Sito di studio avviato su http://localhost:${config.port}`);
