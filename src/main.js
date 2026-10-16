@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
+import compression from 'compression';
 import { config } from './config.js';
 import { getSetting } from './db.js';
 import { loadSession, checkOrigin, ensureOwner, clientIp, parseCookies } from './auth.js';
@@ -20,6 +21,10 @@ import { scheduleBackup, startBackups } from './backup.js';
 const app = express();
 if (config.trustProxy) app.set('trust proxy', 1);
 app.disable('x-powered-by');
+
+// Compressione gzip: pagine e script arrivano molto più leggeri. Le risposte dell'AI sono escluse
+// perché arrivano a pezzi (streaming) e la compressione le tratterrebbe fino alla fine.
+app.use(compression({ filter: (req, res) => !req.path.startsWith('/api/ai/') && compression.filter(req, res) }));
 
 app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
@@ -112,10 +117,32 @@ app.get(Object.keys(legalPages), (req, res) => {
 });
 app.use('/legal', (req, res, next) => res.status(404).sendFile(path.join(config.root, 'public', '404.html')));
 
+// Service worker: riceve l'elenco dei file del sito e una versione calcolata dal loro contenuto.
+// A ogni aggiornamento del sito la versione cambia: l'app scarica tutti i file nuovi insieme e
+// fino ad allora si apre all'istante con quelli già salvati sul dispositivo.
+const swScript = (() => {
+  const pub = path.join(config.root, 'public');
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+  const files = [
+    ...walk(path.join(pub, 'js')),
+    ...['styles.css', 'index.html', 'offline.html', 'manifest.webmanifest'].map((f) => path.join(pub, f)),
+    ...['icon-64.png', 'icon-192.png', 'icon-dark-64.png', 'icon-dark-192.png', 'apple-touch-icon.png', 'favicon.svg', 'ai-64.png', 'ai-256.png']
+      .map((f) => path.join(pub, 'icons', f)),
+  ].filter((f) => fs.existsSync(f));
+  const hash = crypto.createHash('sha1');
+  for (const f of files) hash.update(f).update(fs.readFileSync(f));
+  const version = hash.digest('hex').slice(0, 10);
+  const urls = files.map((f) => `/${path.relative(pub, f).split(path.sep).join('/')}`)
+    .map((u) => (u === '/index.html' ? '/' : u))
+    .concat(['/vendor/marked.js', '/vendor/purify.js']);
+  return fs.readFileSync(path.join(pub, 'sw.js'), 'utf8')
+    .replace("'__VERSION__'", JSON.stringify(version))
+    .replace("'__SHELL__'", JSON.stringify(urls));
+})();
 // Il service worker non va mai messo in cache dal browser, così gli aggiornamenti arrivano subito.
 app.get('/sw.js', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(config.root, 'public', 'sw.js'));
+  res.type('application/javascript').send(swScript);
 });
 app.get('/manifest.webmanifest', (req, res) => {
   res.type('application/manifest+json');

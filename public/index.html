@@ -18,6 +18,24 @@
   <link rel="stylesheet" href="/styles.css">
   <script src="/vendor/marked.js" defer></script>
   <script src="/vendor/purify.js" defer></script>
+  <!-- i moduli dell'app vengono scaricati tutti insieme invece che uno dopo l'altro -->
+  <link rel="modulepreload" href="/js/util.js">
+  <link rel="modulepreload" href="/js/ai.js">
+  <link rel="modulepreload" href="/js/fx.js">
+  <link rel="modulepreload" href="/js/install.js">
+  <link rel="modulepreload" href="/js/zoom.js">
+  <link rel="modulepreload" href="/js/quizgen.js">
+  <link rel="modulepreload" href="/js/mapgen.js">
+  <link rel="modulepreload" href="/js/pages/home.js">
+  <link rel="modulepreload" href="/js/pages/auth.js">
+  <link rel="modulepreload" href="/js/pages/subject.js">
+  <link rel="modulepreload" href="/js/pages/topic.js">
+  <link rel="modulepreload" href="/js/pages/note.js">
+  <link rel="modulepreload" href="/js/pages/map.js">
+  <link rel="modulepreload" href="/js/pages/quiz.js">
+  <link rel="modulepreload" href="/js/pages/profile.js">
+  <link rel="modulepreload" href="/js/pages/admin.js">
+  <link rel="modulepreload" href="/js/pages/notfound.js">
   <script type="module" src="/js/app.js"></script>
 </head>
 <body>

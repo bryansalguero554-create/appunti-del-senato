@@ -1,46 +1,65 @@
-// Service worker della web app: rende il sito installabile e mostra l'ultima versione
-// salvata quando manca la connessione. I dati (/api) non vengono mai messi in cache.
-const CACHE = 'appunti-v8';
-const SHELL = [
-  '/', '/styles.css', '/manifest.webmanifest', '/offline.html',
-  '/js/app.js', '/js/util.js', '/js/ai.js', '/js/fx.js', '/js/quizgen.js', '/js/install.js', '/js/zoom.js', '/js/mapgen.js', '/js/pages/map.js',
-  '/js/pages/auth.js', '/js/pages/home.js', '/js/pages/subject.js', '/js/pages/topic.js', '/js/pages/note.js',
-  '/js/pages/quiz.js', '/js/pages/profile.js', '/js/pages/admin.js', '/js/pages/notfound.js',
-  '/vendor/marked.js', '/vendor/purify.js', '/icons/icon-192.png', '/icons/icon-64.png', '/icons/icon-dark-64.png', '/icons/icon-dark-192.png', '/icons/favicon.svg', '/icons/apple-touch-icon.png', '/icons/ai-64.png', '/icons/ai-256.png',
-];
+// Service worker della web app: l'app si apre all'istante con i file salvati sul dispositivo e funziona
+// anche senza connessione. I dati (/api) non vengono mai messi in cache.
+// VERSION e SHELL vengono inseriti dal server: la versione cambia a ogni aggiornamento del sito.
+const VERSION = '__VERSION__';
+const SHELL = '__SHELL__';
+const CACHE = `appunti-${VERSION}`;
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // tutti i file della nuova versione vengono scaricati insieme, così non si mischiano mai versioni diverse
+  event.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('appunti-') && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
+
+async function fromNetwork(request, cache) {
+  const res = await fetch(request);
+  if (res.ok && res.type === 'basic') cache.put(request, res.clone());
+  return res;
+}
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
-  // Prima la rete (così si vede sempre l'ultima versione del sito), poi la copia salvata.
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response.ok && response.type === 'basic') {
-          const copy = response.clone();
-          caches.open(CACHE).then((c) => c.put(request, copy));
-        }
-        return response;
-      })
-      .catch(async () => {
-        const cached = await caches.match(request, { ignoreSearch: request.mode === 'navigate' });
-        if (cached) return cached;
-        if (request.mode === 'navigate') return (await caches.match('/')) || caches.match('/offline.html');
-        return Response.error();
-      }),
-  );
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    // l'app (pagina principale): subito dalla copia salvata
+    if (request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
+      const shell = await cache.match('/');
+      if (shell) return shell;
+      try {
+        return await fromNetwork(request, cache);
+      } catch {
+        return (await cache.match('/offline.html')) || Response.error();
+      }
+    }
+    // altre pagine (privacy, termini…): dalla rete, con la copia salvata se manca la connessione
+    if (request.mode === 'navigate') {
+      try {
+        return await fromNetwork(request, cache);
+      } catch {
+        return (await cache.match(request)) || (await cache.match('/offline.html')) || Response.error();
+      }
+    }
+    // script, stili, icone: dalla copia salvata di questa versione, altrimenti dalla rete
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    try {
+      return await fromNetwork(request, cache);
+    } catch {
+      return Response.error();
+    }
+  })());
 });
