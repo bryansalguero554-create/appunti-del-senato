@@ -1,0 +1,19 @@
+# Tiene sveglio il sito: il piano gratuito di Render lo spegne dopo 15 minuti senza visite e la
+# riapertura richiede quasi un minuto. Una visita ogni 10 minuti lo mantiene sempre pronto.
+# (Un solo servizio acceso 24/7 resta dentro le 750 ore gratuite al mese di Render.)
+name: Tieni sveglio il sito
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Visita il sito
+        run: curl --silent --show-error --fail --max-time 120 --retry 2 --retry-delay 10 https://appunti-del-senato.onrender.com/api/health

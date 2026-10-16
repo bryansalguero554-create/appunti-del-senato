@@ -72,8 +72,26 @@ export function initInstall() {
   });
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     const register = () => navigator.serviceWorker.register('/sw.js').catch(() => {});
+    // nuova versione del sito installata mentre l'app era aperta: si propone di ricaricare
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) showUpdateBanner();
+    });
     // initInstall parte dopo il login iniziale: la pagina potrebbe essere già caricata
     if (document.readyState === 'complete') register();
     else window.addEventListener('load', register, { once: true });
   }
+}
+
+function showUpdateBanner() {
+  if (document.querySelector('#update-banner')) return;
+  const el = document.createElement('div');
+  el.id = 'update-banner';
+  el.className = 'install-banner update-banner';
+  el.innerHTML = `<div class="grow"><strong>Nuova versione disponibile</strong><br><span class="muted">Tocca Aggiorna per usarla subito.</span></div>
+    <button class="btn btn-primary btn-sm" type="button" data-reload>Aggiorna</button>
+    <button class="icon-btn" type="button" data-close aria-label="Più tardi">✕</button>`;
+  el.querySelector('[data-reload]').addEventListener('click', () => location.reload());
+  el.querySelector('[data-close]').addEventListener('click', () => el.remove());
+  document.body.append(el);
 }
