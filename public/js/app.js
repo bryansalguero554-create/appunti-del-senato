@@ -197,12 +197,53 @@ window.addEventListener('session-lost', () => {
 });
 window.addEventListener('hashchange', router);
 
-(async function boot() {
+// Schermata d'attesa: se il server risponde in ritardo (per esempio perché si stava riaccendendo)
+// si spiega cosa succede invece di lasciare la pagina vuota.
+function showWaking(level) {
+  const msg = !navigator.onLine
+    ? 'Sei offline: l\'app riparte da sola appena torna la connessione.'
+    : level === 2 ? 'Il server non risponde. Controlla la connessione e riprova.'
+      : level === 1 ? 'Il server si stava riposando e si sta riaccendendo: può volerci fino a un minuto, solo questa volta.'
+        : 'Un attimo…';
+  $('#app').innerHTML = `<div class="waking">
+    <picture><source srcset="/icons/icon-dark-192.png" media="(prefers-color-scheme: dark)"><img src="/icons/icon-192.png" alt="" width="88" height="88"></picture>
+    <h2>Sto aprendo ${esc(state.site?.name || 'Appunti del Senato')}</h2>
+    ${level === 2 ? '' : '<div class="waking-bar"><span></span></div>'}
+    <p class="muted">${msg}</p>
+    ${level === 2 ? '<button class="btn btn-primary" type="button" onclick="location.reload()">Riprova</button>' : ''}
+  </div>`;
+}
+
+async function loadMeWithRetry() {
+  const started = Date.now();
+  const timers = [setTimeout(() => showWaking(0), 800), setTimeout(() => showWaking(1), 5000)];
   try {
-    await loadMe();
-  } catch {
-    state.user = null;
+    for (;;) {
+      try {
+        await loadMe();
+        return;
+      } catch (err) {
+        // risposta del server (es. non autorizzato): si prosegue come utente non collegato
+        if (err.status && err.status < 500) { state.user = null; return; }
+        // server che si sta riaccendendo o rete assente: si riprova per un paio di minuti
+        if (Date.now() - started > 120_000) {
+          timers.forEach(clearTimeout);
+          showWaking(2);
+          await new Promise(() => {}); // si aspetta il tocco su "Riprova"
+        }
+        await new Promise((r) => {
+          const t = setTimeout(r, 2500);
+          window.addEventListener('online', () => { clearTimeout(t); r(); }, { once: true });
+        });
+      }
+    }
+  } finally {
+    timers.forEach(clearTimeout);
   }
+}
+
+(async function boot() {
+  await loadMeWithRetry();
   initAi();
   initFx($('#app'));
   initInstall();
