@@ -17,6 +17,7 @@ import { adminDrive, driveCallback } from './routes/drive.js';
 import { startAutoSync } from './sync.js';
 import { seedDefaultSubjects } from './seed.js';
 import { scheduleBackup, startBackups } from './backup.js';
+import { startKeepAlive } from './keepalive.js';
 
 const app = express();
 if (config.trustProxy) app.set('trust proxy', 1);
@@ -165,6 +166,7 @@ seedDefaultSubjects();
 startAutoSync();
 startBackups();
 scheduleBackup();
+startKeepAlive();
 app.listen(config.port, () => {
   console.log(`📚 Sito di studio avviato su http://localhost:${config.port}`);
   if (!config.aiEnabled) console.log('ℹ️  Assistente AI disattivato: imposta GEMINI_API_KEY (gratuita) per attivarlo.');
