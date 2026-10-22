@@ -17,7 +17,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { method = 'GET', body, form, signal } = {}) {
+async function request(path, { method = 'GET', body, form, signal } = {}) {
   const opts = { method, signal, headers: {} };
   if (form) opts.body = form;
   else if (body !== undefined) {
@@ -34,6 +34,79 @@ export async function api(path, { method = 'GET', body, form, signal } = {}) {
     throw new ApiError(data?.error || `Errore ${res.status}`, res.status);
   }
   return data;
+}
+
+// ---------- Copia locale dei contenuti (apertura istantanea) ----------
+// Le pagine principali (materie, argomenti, appunti, quiz, mappe) vengono salvate sul dispositivo.
+// Se il server risponde in fretta si usa la risposta nuova; altrimenti si mostra subito la copia
+// salvata e quella nuova arriva in sottofondo per la volta successiva. Ogni modifica la azzera.
+const CACHE_KEY = 'appunti-cache-v1';
+const CACHEABLE = /^\/(auth\/me|subjects(\/\d+)?|topics\/\d+|notes\/(recent|mine|\d+)|quizzes(\/\d+|\/attempts\/mine)?|maps(\/\d+)?)(\?[\w=&%-]*)?$/;
+const QUICK_MS = 350;
+let mem = null;
+let saveTimer;
+let slowUntil = 0; // server lento: per qualche secondo si usa subito la copia salvata
+
+function cacheStore() {
+  if (!mem) {
+    try { mem = JSON.parse(localStorage.getItem(CACHE_KEY)) || { entries: {} }; } catch { mem = { entries: {} }; }
+  }
+  return mem;
+}
+
+function persistCache() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      mem.entries = Object.fromEntries(Object.entries(mem.entries).sort((a, b) => b[1].t - a[1].t).slice(0, 80));
+      localStorage.setItem(CACHE_KEY, JSON.stringify(mem));
+    } catch { /* spazio pieno o modalità privata */ }
+  }, 300);
+}
+
+export function clearApiCache() {
+  mem = { entries: {} };
+  clearTimeout(saveTimer);
+  try { localStorage.removeItem(CACHE_KEY); } catch { /* modalità privata */ }
+}
+
+function remember(path, data) {
+  const store = cacheStore();
+  if (path === '/auth/me') {
+    const uid = data?.user?.id ?? null;
+    if (uid !== store.uid) { mem = { uid, entries: {} }; } // un altro account: niente dati del precedente
+    if (!uid) return persistCache();
+  }
+  mem.entries[path] = { t: Date.now(), d: data };
+  persistCache();
+}
+
+export async function api(path, opts = {}) {
+  const method = opts.method || 'GET';
+  if (method !== 'GET' || !CACHEABLE.test(path)) {
+    const data = await request(path, opts);
+    if (method !== 'GET' && !/^\/(presence|ai\/)/.test(path)) clearApiCache();
+    return data;
+  }
+  const hit = cacheStore().entries[path];
+  const net = request(path, opts).then((data) => { remember(path, data); return data; });
+  if (!hit) return net;
+  if (Date.now() < slowUntil) {
+    net.catch(() => {});
+    return hit.d;
+  }
+  const SAVED = Symbol('copia salvata');
+  const first = await Promise.race([
+    // rete assente o server in avvio: va bene la copia salvata; "non autorizzato" invece no
+    net.catch((err) => (err.status && err.status < 500 ? Promise.reject(err) : SAVED)),
+    new Promise((r) => { setTimeout(() => r(SAVED), QUICK_MS); }),
+  ]);
+  if (first === SAVED) {
+    slowUntil = Date.now() + 8000;
+    net.then(() => { slowUntil = 0; }, () => {});
+    return hit.d;
+  }
+  return first;
 }
 
 export function toast(message, type = 'info') {
