@@ -1,4 +1,4 @@
-import { state, $, $$, api, esc, toast, toastError, closeModal, spinner, setAiContext, cap } from './util.js';
+import { state, $, $$, api, esc, toast, toastError, closeModal, spinner, setAiContext, cap, clearApiCache } from './util.js';
 import { renderAuth } from './pages/auth.js';
 import { renderHome } from './pages/home.js';
 import { renderSubject } from './pages/subject.js';
@@ -184,6 +184,7 @@ $('#logout-btn').addEventListener('click', async () => {
   try {
     await api('/auth/logout', { method: 'POST' });
   } catch { /* già disconnesso */ }
+  clearApiCache();
   state.user = null;
   location.hash = '#/accedi';
   router();
@@ -192,31 +193,38 @@ $('#modal-close').addEventListener('click', closeModal);
 $('#modal').addEventListener('mousedown', (e) => { if (e.target.id === 'modal') closeModal(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 window.addEventListener('session-lost', () => {
+  clearApiCache();
   toast('Sessione scaduta: accedi di nuovo.', 'error');
   router();
 });
 window.addEventListener('hashchange', router);
 
-// Schermata d'attesa: se il server risponde in ritardo (per esempio perché si stava riaccendendo)
-// si spiega cosa succede invece di lasciare la pagina vuota.
+// Schermata di caricamento (in index.html): resta visibile finché l'app è pronta e, se il server
+// risponde in ritardo (per esempio perché si stava riaccendendo), spiega cosa succede.
 function showWaking(level) {
-  const msg = !navigator.onLine
+  const msg = $('#splash-msg');
+  if (!msg) return;
+  msg.textContent = !navigator.onLine
     ? 'Sei offline: l\'app riparte da sola appena torna la connessione.'
     : level === 2 ? 'Il server non risponde. Controlla la connessione e riprova.'
-      : level === 1 ? 'Il server si stava riposando e si sta riaccendendo: può volerci fino a un minuto, solo questa volta.'
+      : level === 1 ? 'Il server si sta riaccendendo: può volerci fino a un minuto, solo questa volta.'
         : 'Un attimo…';
-  $('#app').innerHTML = `<div class="waking">
-    <picture><source srcset="/icons/icon-dark-192.png" media="(prefers-color-scheme: dark)"><img src="/icons/icon-192.png" alt="" width="88" height="88"></picture>
-    <h2>Sto aprendo ${esc(state.site?.name || 'Appunti del Senato')}</h2>
-    ${level === 2 ? '' : '<div class="waking-bar"><span></span></div>'}
-    <p class="muted">${msg}</p>
-    ${level === 2 ? '<button class="btn btn-primary" type="button" onclick="location.reload()">Riprova</button>' : ''}
-  </div>`;
+  if (level === 2 && !$('#splash .splash-retry')) {
+    $('#splash-bar')?.remove();
+    msg.insertAdjacentHTML('afterend', '<button class="splash-retry" type="button" onclick="location.reload()">Riprova</button>');
+  }
+}
+
+function hideSplash() {
+  const splash = $('#splash');
+  if (!splash || splash.classList.contains('hide')) return;
+  splash.classList.add('hide');
+  setTimeout(() => splash.remove(), 500);
 }
 
 async function loadMeWithRetry() {
   const started = Date.now();
-  const timers = [setTimeout(() => showWaking(0), 800), setTimeout(() => showWaking(1), 5000)];
+  const timers = [setTimeout(() => showWaking(0), 1500), setTimeout(() => showWaking(1), 5000)];
   try {
     for (;;) {
       try {
@@ -247,7 +255,9 @@ async function loadMeWithRetry() {
   initAi();
   initFx($('#app'));
   initInstall();
-  router();
+  // la schermata di caricamento sparisce appena la prima pagina è pronta (al massimo dopo 3 secondi)
+  await Promise.race([router(), new Promise((r) => { setTimeout(r, 3000); })]).catch(() => {});
+  hideSplash();
 }());
 
 export { router };

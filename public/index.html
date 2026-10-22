@@ -15,6 +15,39 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Appunti">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <style>
+    /* Schermata di caricamento: nella pagina stessa, così compare subito, prima di tutto il resto */
+    .splash { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 24px; text-align: center; overflow: hidden;
+      background: #f5f5f7; color: #1d1d1f; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif; transition: opacity .45s ease, transform .45s ease; }
+    .splash::before, .splash::after { content: ""; position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; filter: blur(60px); opacity: .55; animation: splash-drift 9s ease-in-out infinite alternate; }
+    .splash::before { background: radial-gradient(circle, rgba(255,159,10,.35), transparent 60%); top: -30vmax; left: -25vmax; }
+    .splash::after { background: radial-gradient(circle, rgba(94,92,230,.35), rgba(191,90,242,.18) 40%, transparent 65%); bottom: -32vmax; right: -28vmax; animation-delay: -4s; }
+    .splash > * { position: relative; z-index: 1; }
+    .splash-logo { width: 104px; height: 104px; border-radius: 24px; box-shadow: 0 18px 40px rgba(80,40,160,.28), 0 2px 6px rgba(0,0,0,.08); animation: splash-in .6s cubic-bezier(.2,.8,.2,1) both, splash-float 3.2s ease-in-out .6s infinite; }
+    .splash-title { margin: 26px 0 6px; font-size: clamp(1.9rem, 7vw, 2.6rem); font-weight: 800; letter-spacing: -.035em; line-height: 1.05;
+      background: linear-gradient(100deg, #1d1d1f 0%, #1d1d1f 35%, #5e5ce6 55%, #bf5af2 70%, #1d1d1f 90%); background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+      animation: splash-in .6s .08s cubic-bezier(.2,.8,.2,1) both, splash-shine 2.8s .7s ease-in-out infinite; }
+    .splash-tag { margin: 0; font-size: 1rem; color: #6e6e73; animation: splash-in .6s .16s cubic-bezier(.2,.8,.2,1) both; }
+    .splash-bar { width: 132px; height: 4px; margin-top: 34px; border-radius: 4px; background: rgba(0,0,0,.08); overflow: hidden; animation: splash-in .6s .24s both; }
+    .splash-bar span { display: block; width: 45%; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #0a84ff, #bf5af2, #ff9f0a); animation: splash-bar 1.15s ease-in-out infinite; }
+    .splash-msg { min-height: 2.6em; max-width: 320px; margin: 16px 0 0; font-size: .9rem; line-height: 1.35; color: #6e6e73; transition: opacity .3s; }
+    .splash-retry { margin-top: 6px; padding: 11px 22px; border: 0; border-radius: 999px; background: #0071e3; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    .splash.hide { opacity: 0; transform: scale(1.04); pointer-events: none; }
+    .splash .dark { display: none; }
+    @keyframes splash-in { from { opacity: 0; transform: translateY(14px) scale(.96); } }
+    @keyframes splash-float { 50% { transform: translateY(-7px); } }
+    @keyframes splash-shine { 0% { background-position: 100% 0; } 60%, 100% { background-position: 0 0; } }
+    @keyframes splash-bar { from { transform: translateX(-110%); } to { transform: translateX(230%); } }
+    @keyframes splash-drift { to { transform: translate(6vmax, 4vmax) scale(1.08); } }
+    @media (prefers-color-scheme: dark) {
+      .splash { background: #000; color: #f5f5f7; }
+      .splash-title { background-image: linear-gradient(100deg, #f5f5f7 0%, #f5f5f7 35%, #8e8cff 55%, #d98bff 70%, #f5f5f7 90%); }
+      .splash-tag, .splash-msg { color: #a1a1a6; }
+      .splash-bar { background: rgba(255,255,255,.12); }
+      .splash .light { display: none; } .splash .dark { display: block; }
+    }
+    @media (prefers-reduced-motion: reduce) { .splash *, .splash::before, .splash::after { animation: none !important; } }
+  </style>
   <link rel="stylesheet" href="/styles.css">
   <script src="/vendor/marked.js" defer></script>
   <script src="/vendor/purify.js" defer></script>
@@ -39,6 +72,14 @@
   <script type="module" src="/js/app.js"></script>
 </head>
 <body>
+  <div class="splash" id="splash" role="status" aria-live="polite">
+    <img class="splash-logo light" src="/icons/icon-192.png" alt="" width="104" height="104">
+    <img class="splash-logo dark" src="/icons/icon-dark-192.png" alt="" width="104" height="104">
+    <h1 class="splash-title">Appunti del Senato</h1>
+    <p class="splash-tag">Studia con gli appunti di tutti</p>
+    <div class="splash-bar" id="splash-bar"><span></span></div>
+    <p class="splash-msg" id="splash-msg"></p>
+  </div>
   <header class="topbar" id="topbar" hidden>
     <a class="brand" href="#/"><picture><source srcset="/icons/icon-dark-64.png" media="(prefers-color-scheme: dark)"><img class="brand-logo" src="/icons/icon-64.png" alt="" width="28" height="28"></picture><span id="site-name">Appunti</span></a>
     <form class="search" id="search-form" role="search">
