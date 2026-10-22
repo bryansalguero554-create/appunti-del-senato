@@ -215,6 +215,8 @@ function showWaking(level) {
   }
 }
 
+const SPLASH_MS = 2000;
+
 function hideSplash() {
   const splash = $('#splash');
   if (!splash || splash.classList.contains('hide')) return;
@@ -224,7 +226,7 @@ function hideSplash() {
 
 async function loadMeWithRetry() {
   const started = Date.now();
-  const timers = [setTimeout(() => showWaking(0), 1500), setTimeout(() => showWaking(1), 5000)];
+  const timers = [setTimeout(() => showWaking(0), 2600), setTimeout(() => showWaking(1), 6000)];
   try {
     for (;;) {
       try {
@@ -255,8 +257,10 @@ async function loadMeWithRetry() {
   initAi();
   initFx($('#app'));
   initInstall();
-  // la schermata di caricamento sparisce appena la prima pagina è pronta (al massimo dopo 3 secondi)
-  await Promise.race([router(), new Promise((r) => { setTimeout(r, 3000); })]).catch(() => {});
+  // la schermata di caricamento resta circa 2 secondi dall'apertura; se la prima pagina non è ancora
+  // pronta (server che si riaccende e niente di salvato sul dispositivo) resta finché lo è
+  const minShow = new Promise((r) => { setTimeout(r, Math.max(0, SPLASH_MS - performance.now())); });
+  await Promise.all([minShow, Promise.race([router(), new Promise((r) => { setTimeout(r, 90_000); })]).catch(() => {})]);
   hideSplash();
 }());
 
