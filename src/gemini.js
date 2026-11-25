@@ -12,8 +12,12 @@ const headers = () => ({ 'Content-Type': 'application/json', 'x-goog-api-key': c
 
 // Modelli in ordine di preferenza: veloci e con piano gratuito. I modelli più nuovi a volte hanno
 // quota gratuita zero, quindi se uno fallisce per quota o perché non esiste si passa al successivo.
-const PREFERRED = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.0-flash-lite'];
-const MAX_ATTEMPTS = 4;
+// Le versioni "lite" hanno capacità separata: se le altre sono sovraccariche spesso rispondono ancora.
+const PREFERRED = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+const MAX_ATTEMPTS = 6;
+// Se tutti i modelli sono sovraccarichi si aspetta un po' e si fa un altro giro (picchi di richieste brevi).
+const ROUNDS = 2;
+const ROUND_DELAY_MS = 4000;
 let workingModel = null;
 let listed = null; // { at, ids }
 
@@ -37,7 +41,7 @@ async function availableModels() {
 export async function candidateModels() {
   const ids = await availableModels();
   const extra = (ids || [])
-    .filter((id) => /^gemini-\d+(\.\d+)?-flash(-lite)?$/.test(id))
+    .filter((id) => /^gemini-\d+(\.\d+)?-flash(-lite)?(-preview)?$/.test(id))
     .sort((x, y) => parseFloat(y.slice(7)) - parseFloat(x.slice(7)));
   const ordered = [config.geminiModel, workingModel, ...PREFERRED.filter((m) => !ids || ids.includes(m)), ...extra];
   return [...new Set(ordered.filter(Boolean))].slice(0, MAX_ATTEMPTS);
@@ -52,17 +56,25 @@ const retryable = (err) => [404, 429, 500, 503].includes(err.status)
 /** Esegue fn(modello) provando i modelli candidati finché uno funziona. */
 async function withModels(fn) {
   let lastErr;
-  for (const model of await candidateModels()) {
-    try {
-      const result = await fn(model);
-      if (workingModel !== model) console.log(`🤖 Gemini: uso il modello ${model}`);
-      workingModel = model;
-      return result;
-    } catch (err) {
-      lastErr = err;
-      if (!(err instanceof GeminiError) || !retryable(err)) throw err;
-      console.warn(`[Gemini] ${model} non disponibile (${err.status}): ${err.message.slice(0, 160)}`);
-      if (workingModel === model) workingModel = null;
+  for (let round = 0; round < ROUNDS; round++) {
+    if (round > 0) {
+      // un altro giro solo se il problema era il sovraccarico (non per chiave errata o richiesta non valida)
+      if (!lastErr || ![429, 500, 503].includes(lastErr.status)) break;
+      console.warn(`[Gemini] tutti i modelli occupati, nuovo tentativo tra ${ROUND_DELAY_MS / 1000} s`);
+      await new Promise((r) => setTimeout(r, ROUND_DELAY_MS));
+    }
+    for (const model of await candidateModels()) {
+      try {
+        const result = await fn(model);
+        if (workingModel !== model) console.log(`🤖 Gemini: uso il modello ${model}`);
+        workingModel = model;
+        return result;
+      } catch (err) {
+        lastErr = err;
+        if (!(err instanceof GeminiError) || !retryable(err)) throw err;
+        console.warn(`[Gemini] ${model} non disponibile (${err.status}): ${err.message.slice(0, 160)}`);
+        if (workingModel === model) workingModel = null;
+      }
     }
   }
   throw lastErr || new GeminiError('Nessun modello Gemini disponibile.', 503);
@@ -86,6 +98,16 @@ function body({ system, messages, generationConfig }) {
   });
 }
 
+/** fetch verso Gemini: gli errori di rete diventano GeminiError, così si prova il modello successivo. */
+async function call(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    throw new GeminiError(`connessione con Gemini non riuscita (${err?.cause?.code || err?.message || err})`, 503);
+  }
+}
+
 async function check(res) {
   if (res.ok) return;
   const data = await res.json().catch(() => ({}));
@@ -97,7 +119,7 @@ const textOf = (chunk) => (chunk.candidates?.[0]?.content?.parts || []).map((p) 
 /** Risposta in streaming: chiama onText per ogni pezzo di testo. Restituisce il motivo di fine. */
 export async function streamChat({ system, messages, onText, signal }) {
   const res = await withModels(async (model) => {
-    const r = await fetch(`${config.geminiApiBase}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
+    const r = await call(`${config.geminiApiBase}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
       method: 'POST', headers: headers(), body: body({ system, messages }), signal,
     });
     await check(r);
@@ -107,24 +129,29 @@ export async function streamChat({ system, messages, onText, signal }) {
   let buffer = '';
   let finishReason = null;
   let blocked = null;
-  for await (const chunk of res.body) {
-    buffer += decoder.decode(chunk, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 1);
-      if (!line.startsWith('data:')) continue;
-      let data;
-      try {
-        data = JSON.parse(line.slice(5));
-      } catch {
-        continue;
+  try {
+    for await (const chunk of res.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line.startsWith('data:')) continue;
+        let data;
+        try {
+          data = JSON.parse(line.slice(5));
+        } catch {
+          continue;
+        }
+        const text = textOf(data);
+        if (text) onText(text);
+        finishReason = data.candidates?.[0]?.finishReason || finishReason;
+        blocked = data.promptFeedback?.blockReason || blocked;
       }
-      const text = textOf(data);
-      if (text) onText(text);
-      finishReason = data.candidates?.[0]?.finishReason || finishReason;
-      blocked = data.promptFeedback?.blockReason || blocked;
     }
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    throw new GeminiError(`risposta di Gemini interrotta (${err?.cause?.code || err?.message || err})`, 503);
   }
   return { finishReason: blocked ? 'SAFETY' : finishReason };
 }
@@ -132,7 +159,7 @@ export async function streamChat({ system, messages, onText, signal }) {
 /** Risposta in JSON che rispetta lo schema indicato. */
 export async function generateJson({ messages, schema }) {
   const res = await withModels(async (model) => {
-    const r = await fetch(`${config.geminiApiBase}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    const r = await call(`${config.geminiApiBase}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: headers(),
       body: body({ messages, generationConfig: { responseMimeType: 'application/json', responseSchema: schema } }),
@@ -146,13 +173,15 @@ export async function generateJson({ messages, schema }) {
     throw new GeminiError('bloccato dai filtri di sicurezza', 422);
   }
   if (finish === 'MAX_TOKENS') throw new GeminiError('risposta troppo lunga', 413);
-  return JSON.parse(textOf(data));
+  const text = textOf(data);
+  if (!text.trim()) throw new GeminiError(`risposta vuota da Gemini (${finish || 'nessun motivo'})`, 502);
+  return JSON.parse(text);
 }
 
 /** Prova veloce della chiave (usata dal pulsante "Prova l'AI" dell'area riservata). */
 export async function ping() {
   const res = await withModels(async (model) => {
-    const r = await fetch(`${config.geminiApiBase}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    const r = await call(`${config.geminiApiBase}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST', headers: headers(), body: body({ messages: [{ role: 'user', content: 'Rispondi solo con: OK' }] }),
     });
     await check(r);

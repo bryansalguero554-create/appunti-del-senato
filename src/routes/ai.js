@@ -136,6 +136,9 @@ function baseErrorMessage(err) {
     if (err.status === 401 || err.status === 403) return { status: 502, message: 'Accesso a Gemini negato: controlla la chiave GEMINI_API_KEY.' };
     if (err.status === 422) return { status: 422, message: 'L\'AI non può rispondere a questa richiesta.' };
     if (err.status === 413) return { status: 422, message: 'Risposta troppo lunga: riduci il numero di domande.' };
+    if (err.status === 503 && /high demand|overloaded|unavailable/i.test(err.message)) {
+      return { status: 503, message: 'L\'AI gratuita di Google è sovraccarica in questo momento: riprova tra qualche minuto.' };
+    }
     if (err.status === 400) return { status: 400, message: 'Richiesta non accettata dall\'AI (forse il file allegato non è supportato).' };
     return { status: 502, message: 'Il servizio AI non risponde in questo momento, riprova tra poco.' };
   }
@@ -144,7 +147,9 @@ function baseErrorMessage(err) {
   if (err instanceof Anthropic.BadRequestError) return { status: 400, message: 'Richiesta non accettata dall\'AI (forse il file allegato non è supportato).' };
   if (err instanceof Anthropic.APIError) return { status: 502, message: 'Errore temporaneo del servizio AI.' };
   if (err?.name === 'TypeError' && /fetch/i.test(err.message)) return { status: 502, message: 'Il server non riesce a contattare il servizio AI.' };
-  return { status: 500, message: 'Errore imprevisto dell\'assistente AI.' };
+  // codice breve dell'errore, visibile a tutti: aiuta a capire il problema senza mostrare dettagli interni
+  const code = err?.code || err?.name || 'sconosciuto';
+  return { status: 500, message: `Errore imprevisto dell'assistente AI (codice: ${String(code).slice(0, 40)}).` };
 }
 
 /** Prova dell'AI per il proprietario: risponde con il modello usato o con l'errore esatto. */
