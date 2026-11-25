@@ -144,7 +144,9 @@ function baseErrorMessage(err) {
   if (err instanceof Anthropic.BadRequestError) return { status: 400, message: 'Richiesta non accettata dall\'AI (forse il file allegato non è supportato).' };
   if (err instanceof Anthropic.APIError) return { status: 502, message: 'Errore temporaneo del servizio AI.' };
   if (err?.name === 'TypeError' && /fetch/i.test(err.message)) return { status: 502, message: 'Il server non riesce a contattare il servizio AI.' };
-  return { status: 500, message: 'Errore imprevisto dell\'assistente AI.' };
+  // codice breve dell'errore, visibile a tutti: aiuta a capire il problema senza mostrare dettagli interni
+  const code = err?.code || err?.name || 'sconosciuto';
+  return { status: 500, message: `Errore imprevisto dell'assistente AI (codice: ${String(code).slice(0, 40)}).` };
 }
 
 /** Prova dell'AI per il proprietario: risponde con il modello usato o con l'errore esatto. */

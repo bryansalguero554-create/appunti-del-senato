@@ -26,8 +26,8 @@ export const config = {
   ownerName: env.OWNER_NAME || 'Proprietario',
   contactEmail: (env.CONTACT_EMAIL || env.OWNER_EMAIL || 'bryansalguero26@icloud.com').trim(),
   aiModel: env.AI_MODEL || 'claude-opus-5-5',
-  geminiApiKey: env.GEMINI_API_KEY || '',
-  geminiModel: env.GEMINI_MODEL || '',
+  geminiApiKey: (env.GEMINI_API_KEY || '').trim(),
+  geminiModel: (env.GEMINI_MODEL || '').trim(),
   geminiApiBase: (env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com').replace(/\/+$/, ''),
   // Gemini (chiave gratuita) ha la precedenza; altrimenti Claude se è presente la sua chiave
   aiProvider: env.GEMINI_API_KEY ? 'gemini' : (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) ? 'anthropic' : null,
