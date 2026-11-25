@@ -12,8 +12,12 @@ const headers = () => ({ 'Content-Type': 'application/json', 'x-goog-api-key': c
 
 // Modelli in ordine di preferenza: veloci e con piano gratuito. I modelli più nuovi a volte hanno
 // quota gratuita zero, quindi se uno fallisce per quota o perché non esiste si passa al successivo.
-const PREFERRED = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.0-flash-lite'];
-const MAX_ATTEMPTS = 4;
+// Le versioni "lite" hanno capacità separata: se le altre sono sovraccariche spesso rispondono ancora.
+const PREFERRED = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+const MAX_ATTEMPTS = 6;
+// Se tutti i modelli sono sovraccarichi si aspetta un po' e si fa un altro giro (picchi di richieste brevi).
+const ROUNDS = 2;
+const ROUND_DELAY_MS = 4000;
 let workingModel = null;
 let listed = null; // { at, ids }
 
@@ -37,7 +41,7 @@ async function availableModels() {
 export async function candidateModels() {
   const ids = await availableModels();
   const extra = (ids || [])
-    .filter((id) => /^gemini-\d+(\.\d+)?-flash(-lite)?$/.test(id))
+    .filter((id) => /^gemini-\d+(\.\d+)?-flash(-lite)?(-preview)?$/.test(id))
     .sort((x, y) => parseFloat(y.slice(7)) - parseFloat(x.slice(7)));
   const ordered = [config.geminiModel, workingModel, ...PREFERRED.filter((m) => !ids || ids.includes(m)), ...extra];
   return [...new Set(ordered.filter(Boolean))].slice(0, MAX_ATTEMPTS);
@@ -52,17 +56,25 @@ const retryable = (err) => [404, 429, 500, 503].includes(err.status)
 /** Esegue fn(modello) provando i modelli candidati finché uno funziona. */
 async function withModels(fn) {
   let lastErr;
-  for (const model of await candidateModels()) {
-    try {
-      const result = await fn(model);
-      if (workingModel !== model) console.log(`🤖 Gemini: uso il modello ${model}`);
-      workingModel = model;
-      return result;
-    } catch (err) {
-      lastErr = err;
-      if (!(err instanceof GeminiError) || !retryable(err)) throw err;
-      console.warn(`[Gemini] ${model} non disponibile (${err.status}): ${err.message.slice(0, 160)}`);
-      if (workingModel === model) workingModel = null;
+  for (let round = 0; round < ROUNDS; round++) {
+    if (round > 0) {
+      // un altro giro solo se il problema era il sovraccarico (non per chiave errata o richiesta non valida)
+      if (!lastErr || ![429, 500, 503].includes(lastErr.status)) break;
+      console.warn(`[Gemini] tutti i modelli occupati, nuovo tentativo tra ${ROUND_DELAY_MS / 1000} s`);
+      await new Promise((r) => setTimeout(r, ROUND_DELAY_MS));
+    }
+    for (const model of await candidateModels()) {
+      try {
+        const result = await fn(model);
+        if (workingModel !== model) console.log(`🤖 Gemini: uso il modello ${model}`);
+        workingModel = model;
+        return result;
+      } catch (err) {
+        lastErr = err;
+        if (!(err instanceof GeminiError) || !retryable(err)) throw err;
+        console.warn(`[Gemini] ${model} non disponibile (${err.status}): ${err.message.slice(0, 160)}`);
+        if (workingModel === model) workingModel = null;
+      }
     }
   }
   throw lastErr || new GeminiError('Nessun modello Gemini disponibile.', 503);
